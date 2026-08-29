@@ -59,51 +59,70 @@ Phần này giải thích chi tiết ý nghĩa, lý do lựa chọn và tác d�
 *   **[E4] Bản đồ nhiệt Không gian (Spatial Heatmap)**:
     *   *So với Dataset Ninja*: Tái hiện lại bản đồ nhiệt quét vị trí tâm của biển báo trên toàn bộ 4500 ảnh.
     *   *Giúp gì cho model*: Khám phá ra "vùng mù" và "vùng mật độ cao" (biển báo hay nằm ở lề phải khung hình). Từ đó, ta code các lớp Data Augmentation (như Random Crop/Cutout) một cách thông minh: cấm cắt xén ngẫu nhiên vào góc phải của bức ảnh để không tự hủy dữ liệu huấn luyện.
-        *(Giải thích kỹ: Ta sẽ code gì và code thế nào?)*:
-        - **Vấn đề của Code mặc định**: Bình thường khi dùng hàm cắt ảnh (`RandomCrop`), máy tính sẽ "nhắm mắt" cắt 1 mảng tọa độ bất kỳ để đem đi train. Nếu nó vô tình cắt đúng vào góc lề phải (nơi chứa 90% biển báo theo như Heatmap đã chứng minh), thì mảng ảnh bị cắt ra có thể chỉ toàn bầu trời hoặc cây cối. NHƯNG, nhãn (label) của bức ảnh gốc vẫn bị hệ thống gán mặc định cho mảng ảnh này. Hậu quả là model bị ép học 1 bức ảnh bầu trời nhưng phải tin đó là "Biển cấm đỗ". Điều này sinh ra dữ liệu rác làm model học sai lệch.
-        - **Giải pháp (Ta sẽ code thế nào?)**: Thay vì dùng code Augmentation mặc định của PyTorch, ta sẽ sử dụng thư viện chuyên dụng **`Albumentations`**. Thư viện này hỗ trợ kỹ thuật **BBox-safe Augmentation** (Augmentation an toàn cho hộp giới hạn). 
-          - *Cụ thể trong code Python:* Khi định nghĩa lớp cắt ảnh `A.RandomCrop`, ta sẽ gài thêm tham số `BboxParams(min_visibility=0.5)`. 
-          - *Cơ chế hoạt động:* Tham số này đóng vai trò như một người gác cổng. Nó cho phép thuật toán cắt ảnh thoải mái, nhưng sau khi cắt, nó phải lấy tọa độ mới đi kiểm tra chéo với tọa độ Bounding box cũ. Nếu biển báo bị lẹm mất quá 50% diện tích (hoặc biến mất hoàn toàn), hệ thống sẽ **hủy kết quả đó** và ép máy tính cắt lại ở một vùng an toàn khác (ví dụ vùng lề trái không có biển báo).
-          - *Kết quả:* Data sinh ra luôn sạch sẽ, model học được sự đa dạng bối cảnh (cắt trái, phải, trên, dưới) nhưng tuyệt đối không bao giờ bị mất dữ liệu biển báo.
 *   **[E5] Ma trận Đồng xuất hiện (Co-occurrence Matrix)**:
     *   *So với Dataset Ninja*: Tính toán số lần 2 class bất kỳ cùng xuất hiện trong một bức ảnh và vẽ Heatmap Matrix.
     *   *Giúp gì cho model*: Cung cấp Contextual Awareness (Nhận thức ngữ cảnh). Nếu "Biển cảnh báo nguy hiểm" và "Biển hạn chế tốc độ" hay đi liền với nhau, ta có thể dùng kiến thức này để sửa lỗi sai của mô hình khi nó dự đoán các biển báo mờ lân cận.
 *   **[E6] Tỷ lệ Khung hình (Aspect Ratio Distribution) - *Phần bổ sung độc quyền***:
     *   *Tại sao phải bổ sung*: Dataset Ninja chỉ cung cấp thông số Width/Height đơn lẻ, nhưng thứ mà mô hình AI thực sự quan tâm là tỷ lệ tỷ đối (Aspect Ratio = Width / Height).
     *   *Giúp gì cho model*: Các kiến trúc mạng Anchor-based (như Faster R-CNN, YOLOv5, YOLOv7) khi bắt đầu nhận diện sẽ tung ra hàng ngàn các "hộp ảo" (Anchor Box) với nhiều hình dáng mặc định (ví dụ: hộp dài như con người tỷ lệ 1:3, hộp dẹt như ô tô tỷ lệ 2:1). 
-        *(Giải thích kỹ: Tác dụng của việc nắm rõ Aspect Ratio)*:
-        - **Vấn đề của Anchor mặc định**: Nếu ta lười biếng dùng nguyên cấu hình mặc định, model sẽ tung ra các hộp dài và dẹt để tìm biển báo. Nhưng thực tế biển báo giao thông Việt Nam đa số là hình tròn hoặc hình vuông (tỷ lệ chuẩn 1:1). Để ép một cái hộp dài 1:3 bao vừa khít một cái biển báo hình tròn 1:1, model phải tốn hàng chục Epoch (chu kỳ huấn luyện) chật vật học cách "co ngắn" cái hộp lại. Việc này gây lãng phí tài nguyên tính toán cực lớn và làm giảm độ chính xác tổng thể.
-        - **Cách giải quyết từ EDA**: Biểu đồ Scatter Plot của E6 sẽ chứng minh bằng toán học rằng 95% biển báo trong dataset Zalo tập trung ở mốc tỷ lệ 1:1. Dựa vào bằng chứng này, ta chạy thuật toán **K-Means Clustering** (Kỹ thuật M3.1) để tự động đúc ra một bộ Anchor Box mới "đo ni đóng giày" riêng cho đồ án này (chỉ gồm các hộp vuông hoặc hơi chữ nhật). 
-        - **Kết quả**: Khi train, model tung ra các hộp vuông 1:1, khớp gần như hoàn hảo với biển báo ngay từ những Epoch đầu tiên. Model không phải học cách "bóp méo" hộp nữa, dẫn đến tốc độ hội tụ siêu nhanh và sai số (Loss) giảm chạm đáy. *(Lưu ý: Mạng YOLOv8 là kiến trúc Anchor-free nên không dùng kỹ thuật này, nhưng nếu chạy Faster R-CNN thì đây là kỹ thuật bắt buộc phải làm để ghi điểm với hội đồng).*
 
-### ⚙️ 6.2. Giải thích các kỹ thuật tối ưu Model
+### ⚙️ 6.2. Giải thích chi tiết các kỹ thuật tối ưu Model (Từ cơ bản đến nâng cao)
 
 **Nhóm M1: Xử lý Mất cân bằng dữ liệu (Imbalanced Data)**
-*   **[M1.1] Focal Loss / Class Weights**:
-    *   *Lý do*: Các hàm loss thông thường sẽ đánh giá mọi sai sót như nhau. Focal Loss sẽ tự động hạ thấp "tiền phạt" với các class dễ (có số lượng nhiều) và "phạt nặng" hơn khi model đoán sai các class khó/hiếm.
-    *   *Tác dụng*: Trực tiếp cải thiện chỉ số mAP cho các nhóm biển báo thiểu số, giúp độ chính xác trung bình tăng lên.
-*   **[M1.2] Mosaic & MixUp Augmentation**:
-    *   *Lý do*: Thiếu dữ liệu của một số class thì ta phải sinh thêm dữ liệu bằng cách trộn nhiều bức ảnh lại với nhau.
-    *   *Tác dụng*: Vừa giúp cân bằng dữ liệu, vừa ép model học được đặc trưng vật thể trong nhiều bối cảnh lộn xộn khác nhau, tăng khả năng tổng quát hóa (generalization).
+*   **[M1.1] Focal Loss**:
+    *   *Lý do & Tác dụng*: Các hàm loss thông thường sẽ đánh giá mọi sai sót như nhau. Nếu biển Cấm đỗ có 10.000 cái, biển Cấm rẽ chỉ có 100 cái, model sẽ lười biếng đoán mọi thứ là Cấm đỗ. Focal Loss tự động hạ thấp "tiền phạt" với các class dễ (số lượng nhiều) và "phạt cực nặng" khi model đoán sai các class khó/hiếm, ép model phải học cho bằng được lớp thiểu số.
+*   **[M1.2] Mosaic, MixUp & Copy-Paste Augmentation**:
+    *   *Lý do & Tác dụng*: Sinh thêm dữ liệu bằng cách trộn nhiều ảnh (Mosaic/MixUp) hoặc cắt/dán trực tiếp vật thể hiếm sang ảnh nền khác (Copy-Paste). Đặc biệt Copy-Paste là cứu cánh tuyệt đối cho việc ép tỷ lệ cân bằng và tăng chỉ số Recall của các biển báo siêu hiếm.
 
 **Nhóm M2: Xử lý Vật thể siêu nhỏ (Small Objects)**
-*   **[M2.1] SAHI (Slicing Aided Hyper Inference)**:
-    *   *Lý do*: Với ảnh độ phân giải quá cao (1622x626) mà biển báo chỉ 10x10, khi model resize ảnh về 640x640, biển báo sẽ mờ đi và biến mất hoàn toàn. SAHI giải quyết bằng cách cắt bức ảnh to ra thành nhiều mảnh nhỏ, cho model dự đoán từng mảnh rồi ghép lại.
-    *   *Tác dụng*: Cải thiện cực kỳ rõ rệt khả năng nhận diện các biển báo siêu nhỏ ở tận chân trời. Đây là kỹ thuật "chuẩn công nghiệp" sẽ làm hội đồng ấn tượng mạnh.
-*   **[M2.2] High-resolution Training / Zoom-in Augmentation**:
-    *   *Lý do*: Thay vì dùng SAHI lúc suy luận, ta xử lý ngay lúc train bằng cách không cho model thu nhỏ ảnh, hoặc ép hệ thống tự động "zoom in" vào các góc chứa biển báo.
-    *   *Tác dụng*: Giúp các Feature Map cuối cùng trong mạng CNN bảo toàn được thông tin pixel của vật thể nhỏ.
-*   **[M2.3] Tinh chỉnh Feature Map (YOLOv8)**:
-    *   *Lý do*: Mặc định YOLO dùng 3 nhánh đầu ra (P3, P4, P5) tập trung bắt các vật thể vừa và lớn.
-    *   *Tác dụng*: Ta can thiệp vào file cấu hình (yaml) của YOLO để mở thêm nhánh `P2` (nhánh có kích thước lưới lớn nhất nhưng cũng tốn RAM nhất), giúp nó dò tìm các vật cực nhỏ một cách nhạy bén hơn hẳn.
+*   **[M2.1] Tăng độ phân giải Train (High-Res 1280) & Mở P2 Layer (YOLOv8)**:
+    *   *Lý do & Tác dụng*: Biển báo 20x20 đi qua mạng CNN (bị thu nhỏ bằng Stride 8) sẽ teo lại thành 1x1 pixel, khiến máy tính mù tịt. Train ở độ phân giải 1280 giúp bảo toàn pixel. Cấu hình mở thêm nhánh P2 (Stride 4) giúp YOLO trích xuất đặc trưng ở tầng nông hơn, bắt được các điểm ảnh li ti này.
+*   **[M2.2] SAHI (Slicing Aided Hyper Inference)**:
+    *   *Lý do & Tác dụng*: Thay vì nhét ảnh 1600x600 khổng lồ vào dự đoán, SAHI cắt ảnh thành nhiều ô 512x512 quét đè lên nhau. Vật thể nhỏ bỗng chốc trở nên "to" một cách tương đối so với khung hình mới, đẩy độ chính xác mAP vọt lên.
 
-**Nhóm M3: Xử lý Khung hình & Vị trí**
-*   **[M3.1] Anchor Box K-Means Clustering**:
-    *   *Lý do*: Các mạng Faster R-CNN hay YOLO phiên bản cũ dùng bộ anchor box sinh ra từ dataset chung chung bên ngoài. Ta dùng thuật toán học máy K-Means để gom cụm kích thước của chính bộ dữ liệu Zalo này, sinh ra bộ anchor "đo ni đóng giày".
-    *   *Giải thích chi tiết (Anchor nằm ở đâu và K-Means tìm ra nó thế nào?)*:
-        - **Anchor nằm ở đâu?**: Nó không nằm trên bức ảnh, mà là các "chiếc lưới ảo" được lập trình chìm bên trong mạng RPN (Region Proposal Network) của Faster R-CNN. Khi mô hình quét qua lưới Feature Map (ví dụ lưới 80x80), tại TỪNG Ô VUÔNG trên lưới, nó sẽ tự động tung ra một chùm các Anchor Box (ví dụ tung 3 hộp: 1 hộp vuông, 1 hộp dọc, 1 hộp dẹt ngang) để "ướm thử" xem có bắt trúng vật thể nào không.
-        - **Dùng K-Means tìm ra nó thế nào?**: Đầu tiên, ta rút trích toàn bộ hàng chục ngàn Bounding Box thật trong dataset Zalo ra. Ta vứt bỏ tọa độ X, Y (vì không quan tâm nó nằm ở đâu trên ảnh), chỉ giữ lại kích thước Chiều Rộng (Width) và Chiều Cao (Height). Ta chấm các cặp (Width, Height) này lên một đồ thị 2D. Sau đó, ta chạy thuật toán gom cụm **K-Means Clustering**, yêu cầu nó gom hàng ngàn chấm này thành $K$ tâm cụm (ví dụ $K=5$). K-Means sẽ tự động tính toán khoảng cách và chốt ra 5 hình dáng đại diện phổ biến nhất (ví dụ: hộp vuông 10x10, hộp vuông 20x20, chữ nhật đứng 15x20...). Ta lấy 5 kích thước chuẩn xác này nạp vào code của Faster R-CNN để làm Anchor mặc định thay thế cho Anchor gốc.
-    *   *Tác dụng*: Model không phải tốn thời gian học cách "co giãn" hộp dự đoán quá nhiều vì đã có hộp neo chuẩn, dẫn đến quá trình training hội tụ nhanh và loss giảm sâu hơn cực kỳ nhiều.
-*   **[M3.2] Safe Spatial Augmentation (Hạn chế crop vùng lề phải)**:
-    *   *Lý do*: Biển báo nằm ở lề phải, nếu hệ thống áp dụng cắt ảnh random ngẫu nhiên sẽ có tỷ lệ lớn xóa luôn vùng chứa biển báo.
-    *   *Tác dụng*: Bằng cách cấu hình thư viện Albumentations chỉ thực hiện cắt, xoay ở các vùng an toàn (ví dụ: cắt ở góc dưới bên trái), ta đảm bảo tập dữ liệu huấn luyện không bị sinh ra các bức ảnh "rác" (ảnh nhiễu nhưng vẫn bị giữ nhầm nhãn bbox).
+**Nhóm M3: Xử lý Khung hình, Vị trí & Context**
+*   **[M3.1] BBox-Safe Augmentation & Random Shift**:
+    *   *Lý do & Tác dụng*: Nếu cắt ảnh (Crop) ngẫu nhiên sẽ dễ làm mất nửa biển báo. Thuật toán `BBox-Safe Crop` (min_visibility=0.5) đảm bảo hộp giới hạn luôn được giữ. Hơn nữa, dùng `Random Shift` để hất biển báo từ giữa ảnh văng ra mép lề ép model phải từ bỏ định kiến (Center Bias) và quét mắt toàn diện khung hình.
+*   **[M3.2] Nhận thức Ngữ cảnh với RT-DETR (Self-Attention)**:
+    *   *Lý do & Tác dụng*: CNN truyền thống bị giới hạn vùng nhìn (Receptive Field). Mạng Transformer như RT-DETR tính toán sự tương quan giữa tất cả các điểm ảnh. Nhờ đó nó học được quy luật: "Biển Cấm ngược chiều luôn đi kèm với biển Hiệu lệnh", giúp nó suy luận được biển báo dù 1 trong 2 cái bị lá cây che khuất.
+*   **[M3.3] Thuật toán gom cụm Anchor (K-Means Clustering)**:
+    *   *Lý do & Tác dụng*: Các mạng Faster R-CNN dùng anchor mặc định của COCO (hình dẹt, chữ nhật đứng). Dùng K-Means tìm ra kích thước thực tế của tập Zalo (chủ yếu là 1:1 hình vuông) và nạp vào mạng, giúp model hội tụ siêu tốc vì không phải tốn hàng chục epoch để nắn lại hình hộp vuông nữa.
+
+**Nhóm M4: Tinh chỉnh Hậu xử lý & Siêu tham số (Advanced Tuning)**
+*   **[M4.1] Tinh chỉnh hệ số Loss (cls_gain, box_gain)**:
+    *   *Lý do & Tác dụng*: Biển báo giao thông rất giống nhau về hình học (tròn, viền đỏ), chỉ khác hình bên trong. Ta cần cấu hình hệ số `cls_gain` (Phạt phân loại sai) cao hơn nhiều so với `box_gain` (Phạt trượt tọa độ) để ép model săm soi kỹ vào hình vẽ bên trong biển báo.
+*   **[M4.2] Tối ưu NMS (max_det, IoU Threshold, Soft-NMS)**:
+    *   *Lý do & Tác dụng*: Hạ `max_det = 50` giúp thuật toán NMS chạy nhanh hơn (tăng FPS). Tăng `IoU Threshold = 0.6` hoặc dùng `Soft-NMS` giúp giữ lại các biển báo đứng sát nhau (không bị hàm NMS xóa nhầm do lầm tưởng là 1 vật).
+*   **[M4.3] Test-Time Augmentation (TTA)**:
+    *   *Lý do & Tác dụng*: Lúc dự đoán, đưa ảnh gốc, ảnh lật ngang, ảnh phóng to vào model cùng lúc rồi gom kết quả trung bình (Ensemble). Cực kỳ mạnh để thi đấu Kaggle, tăng chắc chắn 1.5 - 2% mAP nhưng bù lại chạy dự đoán chậm gấp 3 lần.
+*   **[M4.4] Lịch trình Học thuật (AdamW & Cosine Annealing)**:
+    *   *Lý do & Tác dụng*: Khởi đầu với Warmup (LR nhỏ) để chống nổ Gradient khi học các vật thể bé, sau đó hạ nhiệt độ LR từ từ theo đường cong Cosine giúp model tránh hố sâu cục bộ và giảm overfitting.
+
+---
+
+### 🎯 6.3. Hướng dẫn Lựa chọn Kỹ thuật (Chiến lược Thực chiến)
+
+Để giúp bạn tối ưu hóa thời gian và tài nguyên, dưới đây là danh sách đánh giá và phân loại toàn bộ các kỹ thuật tinh chỉnh đã đề cập trong suốt quá trình EDA. Hãy chọn "combo" phù hợp với cấu hình máy của bạn để báo cáo trước Hội đồng.
+
+#### 🌟 1. BẮT BUỘC PHẢI DÙNG (Cốt lõi - Không có là Thất bại)
+Đây là các kỹ thuật sống còn. Nếu thiếu chúng, mô hình sẽ sụp đổ trước các vật thể siêu nhỏ và sự mất cân bằng dữ liệu trầm trọng.
+- **Focal Loss (E1)**: Bắt buộc bật. Không có nó, class thiểu số như "Cấm Rẽ" sẽ bị phớt lờ, độ chính xác Recall sẽ chạm đáy 0.
+- **P2 Layer cho YOLO hoặc K-Means Anchor cho Faster R-CNN (E3, E6)**: Kiến trúc bắt buộc để mô hình học được kích thước vật thể li ti và hình khối vuông 1:1 chuẩn xác của biển báo Việt Nam.
+- **BBox-Safe Crop & Random Shift (E4)**: Dùng `Albumentations` để cắt ảnh an toàn (min_visibility=0.5) và dịch chuyển ảnh để phá vỡ "định kiến trung tâm" (Center Bias). Cực kỳ quan trọng để máy không tự sinh ra rác dữ liệu làm nhiễu mô hình.
+- **SAHI (Khi suy luận) (E3)**: Lên đồ án Object Detection vật thể nhỏ mà thiếu SAHI là một lỗ hổng vô cùng lớn. Nó là "thần dược" cắt nhỏ ảnh giúp mAP vọt lên mà không cần tốn công train lại model.
+
+#### ⚡ 2. NÊN DÙNG (Lấy điểm tuyệt đối từ Hội đồng)
+Các kỹ thuật này chứng minh bạn am hiểu sâu sắc bản chất Toán học và cơ chế vận hành bên trong mô hình, không chỉ xài AI như một "hộp đen".
+- **Bộ Augmentation Đa dạng (Mosaic, Copy-Paste, CLAHE) (E0, M1.2)**: Sử dụng Copy-Paste để cắt dán trực tiếp biển báo hiếm sang bối cảnh khác là luận điểm cực mạnh để giải quyết Imbalanced Data thay vì chỉ ỷ lại vào hàm Loss.
+- **Loss Multipliers Tuning (cls_gain) (M4.1)**: Việc biết cách tăng tham số phạt phân loại (Class Loss) cao hơn phạt tọa độ (Box Loss) chứng tỏ bạn thấu hiểu đặc thù: Biển giao thông rất giống nhau về viền đỏ bên ngoài, chỉ phân biệt nhờ hình vẽ mờ nhạt bên trong.
+- **Tối ưu NMS (Hạ max_det = 50, Tăng IoU = 0.6) (E2, M4.2)**: Phân tích được mật độ biển báo để hạ max_det giúp tăng mạnh tốc độ khung hình (FPS) khi chạy thực tế, chứng tỏ tư duy tối ưu tài nguyên hệ thống rất tốt.
+- **Lịch trình Học thuật (AdamW & Cosine Annealing) (M4.4)**: Sử dụng thuật toán tối ưu chuẩn nghiên cứu với Warmup chống nổ Gradient và hạ nhiệt theo đường cong Cosine để tránh hố sâu cục bộ.
+
+#### ⚖️ 3. CÂN NHẮC DÙNG (Dành cho việc thi đấu đua Top)
+Các kỹ thuật này mang lại kết quả trên giấy rất đẹp nhưng lại ngốn tài nguyên phần cứng khủng khiếp hoặc không phù hợp để Demo thời gian thực.
+- **Test-Time Augmentation - TTA (M4.3)**: Cực tốt để đẩy % mAP lên kịch trần làm báo cáo slide. NHƯNG, nếu hội đồng yêu cầu chạy Demo thực tế trên Webcam, bạn PHẢI TẮT TTA đi, vì nó bắt máy tính phải lật/phóng to ảnh liên tục sẽ kéo FPS tụt thê thảm khiến màn hình giật lag.
+- **Multi-Scale Training & High-Res 1280 (E3)**: Ép mô hình học ở nhiều độ phân giải khác nhau (từ bé đến lớn) làm mệt máy, tốn VRAM và kéo dài thời gian train gấp nhiều lần. Chỉ dùng nếu có GPU thật khỏe.
+- **Kiến trúc Transformer - RT-DETR (E5)**: Rất xuất sắc trong việc hiểu Ngữ cảnh toàn cục (minh chứng cho bài toán "Biển cấm ngược chiều luôn đi chung biển Hiệu lệnh"), nhưng chạy khá nặng nề. Dùng để làm đối trọng so sánh với YOLO.
+- **Soft-NMS (M4.2)**: Khắc phục triệt để việc xóa nhầm các biển báo đứng sát cạnh nhau, nhưng làm chậm tốc độ suy luận đôi chút so với NMS cứng mặc định.
+
+> **Tư vấn CHỐT HẠ:** Hãy dồn 80% công lực vào mô hình **YOLOv8** làm át chủ bài. Bật nhánh **P2**, kết hợp bộ ba thuật toán Augmentation (**Copy-Paste + Bbox-Safe + Focal Loss**) và chốt hạ bằng lớp giáp **SAHI** ở khâu Testing. Thiết lập thêm `max_det=50` để tối ưu FPS. Khung sườn này tạo nên một lộ trình "Giải thích vấn đề -> Tìm phương án tối ưu -> Giải quyết triệt để" cực kỳ hoàn hảo cho cuốn Đồ án tốt nghiệp!
