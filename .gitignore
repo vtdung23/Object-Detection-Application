@@ -1,0 +1,12 @@
+﻿kaggle.json
+*.pdf
+*.docx
+slides HTK/
+dich_de_bai.md
+huong_dan.md
+quy_trinh_lam_viec.md
+tom_tat_do_an.md
+
+# Ignored data
+data/
+kaggle.json
