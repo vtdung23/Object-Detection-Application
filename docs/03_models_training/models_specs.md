@@ -22,10 +22,13 @@ Tài liệu này đóng vai trò như một **Datasheet tiêu chuẩn công nghi
 - **Thuật toán Tối ưu (Optimizer):** `AdamW` (Tự động thích ứng Learning Rate và phạt Weight Decay chuẩn xác hơn Adam gốc).
 - **Lịch trình LR (Learning Rate Scheduler):** `Cosine Annealing`. Khởi đầu (Warmup) ở mức rất nhỏ, sau đó vọt lên và giảm dần theo đường cong hình sin lượn sóng.
 - **Kích thước Lô (Batch Size):** 8.
+- **Số vòng lặp (Epochs):** 50.
+- **Tham số dọn rác (NMS):** Hạ `max_det = 50` (Giới hạn tối đa 50 vật thể/ảnh để tối ưu luồng xử lý Web) và `iou = 0.6` (Bảo vệ các biển báo cắm sát nhau).
 
 ### 1.3 Cơ chế Tiền xử lý & Augmentation (CPU DataLoader)
 - **Mosaic (`1.0`):** Kỹ thuật đập vụn 4 bức ảnh và nén vào 1 lưới (Grid). Vô tình thu nhỏ kích thước thật của vật thể, ép mạng P2 Layer phải học cách nhìn xa. Đồng thời hack dung lượng VRAM (Batch 8 mang bối cảnh của 32 ảnh).
 - **Random Shift (`translate=0.2`):** Sử dụng ma trận biến đổi Affine để dịch chuyển toàn bộ tọa độ điểm ảnh ngẫu nhiên 20%. Kỹ thuật này sinh ra để triệt tiêu hội chứng **Center Bias** (Khi thống kê cho thấy 67.4% biển báo Zalo tập trung ở chính giữa bức ảnh).
+- **Xoay nhẹ (`degrees=10.0`):** Xoay ảnh ngẫu nhiên trong khoảng ±10° để tăng tính đa dạng dữ liệu, mô phỏng góc nghiêng thực tế của camera Dashcam.
 
 ### 1.4 Cơ chế Hàm độ lỗi (Loss Functions)
 Tổng Loss = $\lambda_1 L_{cls} + \lambda_2 L_{box} + \lambda_3 L_{dfl}$
@@ -65,8 +68,9 @@ Tổng Loss = $\lambda_1 L_{cls} + \lambda_2 L_{box} + \lambda_3 L_{dfl}$
 
 ### 2.2 Thiết lập Huấn luyện (Training Config)
 - **Độ phân giải đầu vào:** Tự động scale sao cho cạnh nhỏ nhất là 800px.
-- **Thuật toán Tối ưu (Optimizer):** `SGD` (Stochastic Gradient Descent). Với ResNet, SGD (kèm Momentum=0.9) luôn mang lại sự hội tụ ổn định và sâu hơn so với các thuật toán họ Adam.
+- **Thuật toán Tối ưu (Optimizer):** `SGD` (`lr=0.005`, `momentum=0.9`, `weight_decay=0.0005`). Với ResNet, SGD kèm Momentum luôn mang lại sự hội tụ ổn định và sâu hơn so với các thuật toán họ Adam.
 - **Batch Size:** 4 (Do kiến trúc Two-stage rất tốn VRAM).
+- **Số vòng lặp (Epochs):** 10.
 
 ### 2.3 Cơ chế Hàm độ lỗi (Loss Functions)
 - **RPN Loss:** Gồm 2 hàm: Objectness Loss (BCE) để phân biệt có vật thể hay nền, và RPN Box Loss (Smooth L1).
@@ -109,6 +113,7 @@ Dây chuyền Two-stage của Faster R-CNN trải qua 5 bước cực kỳ cồn
 - **Độ phân giải đầu vào:** `1280 x 1280`. (Cần độ phân giải cực lớn để Self-Attention vươn vòi bao quát toàn bộ ngữ cảnh bức ảnh).
 - **Thủ thuật Chống OOM (Out-Of-Memory):** **Gradient Accumulation**. Khóa `batch_size = 2` nhưng cài `accumulate = 4`. Mô hình cộng dồn đạo hàm qua 4 chu kỳ liên tiếp mới cập nhật trọng số 1 lần, tạo hiệu ứng batch ảo là 8.
 - **Thuật toán Tối ưu (Optimizer):** `AdamW` + `Cosine Annealing`.
+- **Số vòng lặp (Epochs):** 50.
 
 ### 3.3 Cơ chế Hàm độ lỗi (Loss Functions)
 - Bỏ hẳn tư duy Anchor Box (Khung mồi).
@@ -119,8 +124,8 @@ Khác hoàn toàn với tư duy "Trượt cửa sổ" của CNN (như YOLO, R-CN
 0. **Tiền xử lý (Nạp ảnh Panorama 1280px):** Trái ngược với Faster R-CNN phải cắt vụn ảnh ra 512x512, RT-DETR nuốt trọn bức ảnh toàn cảnh khổng lồ `1280x1280` để giữ lại 100% bối cảnh không gian (Ví dụ: Mô hình tự hiểu biển báo cấm rẽ thường đứng chung cột với biển cấm ngược chiều).
 1. **Trích xuất cục bộ (HGNetv2 Backbone):** Dù là mạng Transformer, lớp đầu tiên của nó BẮT BUỘC phải là mạng Tích chập (CNN) HGNetv2. Lý do: Transformer rất ngu ngốc trong việc nhận diện viền/góc cạnh ở giai đoạn đầu. Mạng CNN sẽ giải quyết phần "chân tay" này và nén ảnh thành ma trận.
 2. **Cầu nối đa tầng (CCFM Neck):** Thay vì dùng FPN, RT-DETR dùng mô-đun lai CCFM (Cross-Scale Feature-fusion Module) để trộn lẫn ma trận từ tầng nông và tầng sâu, chuẩn bị "thức ăn" tinh gọn nhất trước khi tống vào lõi Transformer.
-3. **Bộ não Transformer (Self-Attention Decoder):** Đây là lõi sức mạnh. Mô hình ném vào không gian đúng 300 "Hạt giống" (Object Queries). Chẳng cần trượt cái cửa sổ nào cả! Mỗi hạt giống lập tức phóng tầm mắt nhìn bao quát toàn bộ 100% diện tích bức ảnh bằng phép toán Phân bổ sự chú ý `Q-K-V` (Query-Key-Value). Hạt giống ở góc trái màn hình vẫn có thể quét thấy và "hút" tín hiệu biển báo ở tận góc phải màn hình về bụng nó. Cuối chu trình, 300 hạt giống nở thành 300 Khung dự đoán.
-4. **Khớp nối 1-1 & Tính Loss (Hungarian Algorithm):** Đây là cuộc cách mạng chấm dứt kỷ nguyên của NMS (Lọc nhiễu)! R-CNN hay YOLO phọt ra 10,000 khung rồi phải dùng NMS xóa bớt. RT-DETR chỉ xuất đúng 300 khung. Nó dùng thuật toán **Bipartite Matching** (Khớp nối nhị phân) lập một ma trận chi phí để "mai mối" 300 khung này với (ví dụ) 5 cái biển báo thật trên ảnh. Toán học mai mối hoàn hảo sao cho không có 2 khung nào đè lên cùng 1 biển báo. 5 khung khớp nhất được tính Loss để học, 295 khung rớt đài tự động bị vứt vào sọt rác (Background). Sự thanh lịch tuyệt đối của Toán học!
+3. **Bộ não Transformer (Self-Attention Decoder):** Đây là lõi sức mạnh. Mô hình ném vào không gian đúng 300 "Hạt giống" (Object Queries). Chẳng cần trượt cái cửa sổ nào cả! Mỗi hạt giống phóng tầm mắt bao quát toàn bộ 1,600 mảnh ghép bằng cơ chế toán học **Q-K-V (Query-Key-Value)**. Thao tác này hoàn toàn dựa trên Đại số tuyến tính: Nó dùng phép Nhân vô hướng (Dot Product) để đo **Cosine Similarity** (Độ tương đồng) giữa lệnh truy nã ($Q$) và biển quảng cáo của pixel ($K$). Sau khi trúng mục tiêu, nó dùng phép Cộng ma trận (Residual Connection) để "nuốt" trọn khối lượng dữ liệu thật ($V$) vào bản thân hạt giống. Trải qua 6 vòng lặp Decoder, 300 hạt giống này tự động bù trừ Offset (Độ lệch) và nở thành đúng 300 Khung dự đoán.
+4. **Khớp nối 1-1 & Tính Loss (Hungarian Algorithm):** Đây là cuộc cách mạng chấm dứt kỷ nguyên của NMS! R-CNN hay YOLO phọt ra 10,000 khung rồi phải dùng NMS xóa bớt. RT-DETR chỉ xuất đúng 300 khung. Nó dùng thuật toán **Bipartite Matching** (Kuhn-Munkres) trong thời gian đa thức $O(N^3)$ để lập Ma trận chi phí (Dựa trên $\mathcal{L}_{\text{L1}}$, $\mathcal{L}_{\text{GIoU}}$ và $\text{Focal Loss}$). Toán học giải bài toán Tối ưu Tổ hợp sao cho 5 cái biển báo thật được gán cho đúng 5 khung dự đoán với chi phí RẺ NHẤT (1-kèm-1). Sự thanh lịch tuyệt đối nằm ở chỗ: 5 khung khớp nhất được lôi ra tính Loss để bay về đích. 295 khung rớt đài còn lại bị ép gán nhãn "$\varnothing$" (Background) và lập tức chịu sự trừng phạt tàn khốc của **Focal Loss**, sinh ra dòng Gradient âm khổng lồ đè bẹp trọng số của chúng về 0. Toàn bộ rác nền tự động bị triệt tiêu bằng Toán học thuần túy mà không cần NMS!
 
 ### 3.4 Yêu cầu Phần cứng & Hiệu năng
 - **Tài nguyên Training:** Cực kỳ "ăn" VRAM do tính chất ma trận vuông khổng lồ của Attention. Nếu không dùng Gradient Accumulation, card 16GB sẽ nổ tung ở ảnh 1280.
