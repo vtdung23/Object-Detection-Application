@@ -22,7 +22,7 @@ Bản thiết kế này quy định chi tiết cấu trúc, giao diện và các
 
 1.  **Thuật toán cắt ảnh SAHI:** Băm ảnh 4K thành các mảnh lưới `512x512` để zoom cận cảnh vào các biển báo siêu nhỏ.
 2.  **Test-Time Augmentation (TTA):** Bật cờ augment khi gọi hàm predict để vá các góc nhìn mù.
-3.  **Soft-NMS:** Trộn kết quả các mảnh cắt từ SAHI bằng Soft-NMS để không xóa nhầm các biển báo nằm đè lên nhau.
+3.  **Soft-NMS & Hạ max_det=50:** Trộn kết quả các mảnh cắt từ SAHI bằng Soft-NMS để không xóa nhầm các biển báo đè lên nhau. Đồng thời giới hạn tối đa 50 biển báo/ảnh (max_det=50) để đảm bảo trình duyệt Web không bị treo khi vẽ khung rác.
 
 *(Lưu ý: API dự đoán sẽ mất khoảng 3-5 giây xử lý, nên Frontend bắt buộc phải có hiệu ứng Loading đẹp mắt để giữ chân người dùng).*
 
@@ -52,7 +52,7 @@ web_app/
 ├── Dockerfile              # Cấu hình môi trường cho Hugging Face Spaces
 │
 ├── weights/
-│   └── best_yolov8.pt      # File trọng số mô hình (Tạm thời dùng file test)
+│   └── best.pt             # File trọng số mô hình tốt nhất (best.pt)
 │
 ├── templates/
 │   └── index.html          # Cấu trúc giao diện HTML
@@ -66,14 +66,6 @@ web_app/
 
 ---
 
-## 5. Trả lời câu hỏi: Dùng file `best.pt` tạm thời được không?
-
-**Hoàn toàn ĐƯỢC và RẤT NÊN LÀM!** 
-
-Trong Software Engineering, đây gọi là phương pháp phát triển song song (Parallel Development). Bạn không cần đợi train xong 50 epoch mới làm Web. Việc dùng file trọng số lưu nháp qua vài epoch (như file `best_yolov8.pt` bạn vừa chuẩn bị) là hoàn hảo để chúng ta bắt đầu:
-1. Load model lên Backend và test luồng dữ liệu API xem có chạy mượt không.
-2. Test code vẽ Bounding Box của Frontend.
-3. Khi bạn có file weights xịn (train xong 50 epoch), ta chỉ việc xóa file cũ, copy file mới vào thư mục `weights/` là xong, không phải sửa thêm một dòng code nào cả!
 
 ---
 

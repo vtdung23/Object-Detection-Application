@@ -1,0 +1,8 @@
+fastapi
+uvicorn
+python-multipart
+ultralytics
+sahi
+opencv-python-headless
+pydantic
+jinja2

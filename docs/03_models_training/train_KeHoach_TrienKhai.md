@@ -10,15 +10,14 @@ Dưới đây là ma trận phân bổ các kỹ thuật tinh chỉnh cho từng
 
 ### 🌐 1. Dành cho phần Web App (Giai đoạn Suy luận / Inference)
 Phần Web App (Dự đoán 1 ảnh tĩnh tải lên) được ưu tiên tối đa hóa độ chính xác (mAP) và không bị giới hạn bởi tốc độ Real-time. Các kỹ thuật "nặng đô" này sẽ được code thẳng trên Server Web:
-- **SAHI (Slicing Aided Hyper Inference)**: Cắt ảnh trượt đè lấp để soi bằng được các biển báo siêu li ti ở xa. Áp dụng chung cho cả 3 model khi load weights dự đoán.
-- **TTA (Test-Time Augmentation)**: Bật tính năng lật/phóng to ảnh lúc test để lấy kết quả trung bình, vá các góc nhìn mù.
-- **Tối ưu NMS & Soft-NMS**: Hạ `max_det=50`, nới lỏng `IoU=0.6` hoặc dùng `Soft-NMS` để giữ lại các biển báo cắm chùm, đứng sát mép nhau mà không bị xóa nhầm.
+- **SAHI (Slicing Aided Hyper Inference)**: Cắt ảnh trượt đè lấp để soi bằng được các biển báo siêu li ti ở xa. **Cấu hình chốt hạ:** Thiết lập `slice_height=512`, `slice_width=640`, và `overlap=0.25`. Thiết lập cắt dị biệt này bắt buộc AI phải phóng to (Zoom 2.5x) mảnh cắt để tối đa hóa điểm mAP. Áp dụng chung cho cả 3 model khi load weights dự đoán.
+- **Tối ưu NMS (Hard-NMS):** Hạ `max_det=50`, thiết lập `IoU=0.6`. Ta chốt sử dụng NMS tiêu chuẩn thay vì Soft-NMS để tăng tốc độ và phù hợp với bộ lọc rác >= 50% của Frontend.
 
 ### 🤖 2. Phân bổ cho mô hình YOLOv8
 - **Cấu trúc mạng**: Bật nhánh P2 Layer (`yolov8s-p2.yaml`).
-- **Hàm Loss**: Bật Focal Loss, cấu hình tăng mạnh `cls_gain` cao hơn `box_gain`.
-- **Augmentation**: Kích hoạt Mosaic cường độ cao, Random Shift (thông qua `translate` để trị Center Bias).
-- **Siêu tham số Training**: `imgsz=1280`, `max_det=50`, dùng Optimizer `AdamW` + `Cosine Annealing LR`.
+- **Hàm Loss**: Bật Focal Loss (`fl_gamma=2.0`), cấu hình tăng mạnh `cls_gain=2.0` cao hơn gấp đôi so với `box_gain=1.0`.
+- **Augmentation**: Kích hoạt Mosaic cường độ cao (`mosaic=1.0`), Random Shift (thông qua `translate=0.2` để trị Center Bias).
+- **Siêu tham số Training**: Thiết lập `imgsz=1280`, `max_det=50`, dùng Optimizer `AdamW` + `Cosine Annealing LR` (`cos_lr=True`).
 
 ### 🤖 3. Phân bổ cho mô hình Faster R-CNN
 - **Cấu trúc mạng**: Ghi đè Anchor Box mặc định của mạng RPN bằng bộ **K-Means Anchor 1:1** sinh ra từ EDA. Lưu ý cấu hình **num_classes = 8** (7 class biển báo + 1 class Background bắt buộc của PyTorch).
@@ -49,15 +48,15 @@ detection_model = AutoDetectionModel.from_pretrained(
     device="cuda:0", # Dùng GPU để tăng tốc (hoặc cpu)
 )
 
-# 2. Sử dụng SAHI kết hợp Soft-NMS [TỪ E3, M4.2]
+# 2. Sử dụng SAHI kết hợp NMS [TỪ E3, M4.2]
 result = get_sliced_prediction(
     "uploaded_image.jpg",
     detection_model,
-    slice_height=512,
-    slice_width=512,
-    overlap_height_ratio=0.2, # Đè lấp 20% để không làm đứt đôi biển báo
-    overlap_width_ratio=0.2,
-    postprocess_type="SOFTNMS", # Kích hoạt Soft-NMS bảo vệ biển báo đứng sát nhau
+    slice_height=512, # Ép lùn xuống 512 để kích hoạt Zoom 2.5x lên độ phân giải 1280
+    slice_width=640,  # Giữ ngang 640 để quét nhanh theo chiều ngang ảnh Panorama
+    overlap_height_ratio=0.25, # Đè lấp 25% (128px) cứu biển báo bị chém ngang
+    overlap_width_ratio=0.25,  # Đè lấp 25% (160px)
+    postprocess_type="NMS", # Kích hoạt NMS độc quyền giữ lại hộp điểm cao nhất
     postprocess_match_metric="IOU",
     postprocess_match_threshold=0.6 # Nới lỏng IoU
 )
@@ -73,8 +72,9 @@ result.export_visuals(export_dir="static/output/")
 import yaml
 from ultralytics import YOLO
 
-# 1. Tạo và load kiến trúc P2 Layer [TỪ E3]
-# Có thể dùng trực tiếp file yolov8s-p2.yaml từ ultralytics
+# 1. Khởi tạo kiến trúc P2 Layer Custom (Phát hiện vật siêu nhỏ) [TỪ E3]
+# LƯU Ý KỸ THUẬT: Thư viện mặc định KHÔNG có sẵn nhánh P2. 
+# Phải tự viết Script Python sinh ra file yolov8s-p2.yaml (Đã code trong Notebook)
 model = YOLO('yolov8s-p2.yaml') 
 model.load('yolov8s.pt') # Load pretrain để học nhanh
 
@@ -99,8 +99,10 @@ results = model.train(
     degrees=10.0,       # Xoay nhẹ
     translate=0.2,      # Random Shift văng biển báo ra mép ảnh
     
+    # --- Thông số Hệ thống ---
     project='zalo_traffic',
-    name='yolov8_optimized'
+    name='yolov8s_p2_highres', # Đổi tên chuẩn xác để biểu thị dùng P2 và độ phân giải cao
+    device=0                   # BẮT BUỘC kích hoạt GPU, tránh train lộn qua CPU
 )
 ```
 
@@ -117,9 +119,16 @@ from albumentations.pytorch import ToTensorV2
 # 1. BBox-Safe Augmentation [TỪ E4]
 def get_transform():
     return A.Compose([
-        A.HorizontalFlip(p=0.5),
-        # min_visibility=0.5: Bộ lọc thông minh tự động hủy nhát cắt nếu xóa mất quá 50% biển báo
-        A.RandomSizedBBoxSafeCrop(width=1280, height=1280, erosion_rate=0.0, p=0.3),
+        # [CẢNH BÁO ĐỎ]: TUYỆT ĐỐI KHÔNG DÙNG A.HorizontalFlip() Ở ĐÂY.
+        # Lật ảnh sẽ làm lật ngược mũi tên của biển Cấm rẽ Trái thành Cấm rẽ Phải, gây phá hủy bộ nhớ logic của AI.
+        
+        # [KỸ THUẬT RANDOM CROP ĐỘNG ON-THE-FLY]
+        # Ảnh gốc Zalo AI có chiều cao là 626px. Nếu dùng khuôn cắt lớn hơn (ví dụ 640) thì sẽ bị lỗi vượt quá khung ảnh.
+        # Do đó, con số 512x512 là kích thước lý tưởng nhất (chuẩn Power of 2). 
+        # Cách hoạt động: Tại mỗi lần nạp ảnh, CPU sẽ tung xúc xắc chọn ngẫu nhiên một tọa độ (X, Y) bất kỳ.
+        # Sau đó thả cái khuôn 512x512 xuống đúng tọa độ đó để xẻo lấy phần ảnh (giúp sinh ra hàng vạn biến thể từ 1 ảnh gốc).
+        # min_visibility=0.5: Bộ lọc thông minh tự động đo lường Area_after/Area_before. Hủy nhát cắt nếu chém mất quá 50% biển báo.
+        A.RandomSizedBBoxSafeCrop(width=512, height=512, erosion_rate=0.0, p=0.3),
         A.Normalize(),
         ToTensorV2(),
     ], bbox_params=A.BboxParams(format='pascal_voc', label_fields=['labels'], min_visibility=0.5))
@@ -129,9 +138,11 @@ def get_model(num_classes):
     # Load model gốc
     model = torchvision.models.detection.fasterrcnn_resnet50_fpn(pretrained=True)
     
-    # 5 kích thước chuẩn của Zalo AI (Giá trị này lấy từ output chạy thực tế của K-Means)
-    anchor_sizes = ((15, 25, 45, 70, 120), ) 
-    aspect_ratios = ((1.0,),) # Ép dùng hoàn toàn hình vuông 1:1
+    # [QUAN TRỌNG] FPN có 5 tầng (Levels: P2, P3, P4, P5, P6). 
+    # Do đó, PyTorch BẮT BUỘC ta phải truyền vào một Tuple chứa 5 Tuple con, mỗi Tuple con tương ứng 1 tầng FPN.
+    # 5 kích thước chuẩn của Zalo AI (Giá trị này lấy từ output chạy K-Means 1:1)
+    anchor_sizes = ((10,), (24,), (44,), (77,), (133,)) 
+    aspect_ratios = ((1.0,),) * len(anchor_sizes) # Ép dùng hoàn toàn hình vuông 1:1 cho cả 5 tầng
     
     # Ghi đè vào mạng RPN
     anchor_generator = AnchorGenerator(sizes=anchor_sizes, aspect_ratios=aspect_ratios)
