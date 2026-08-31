@@ -27,9 +27,9 @@ Khi viết code Python phân tích file `train_traffic_sign_dataset.json`, chún
 
 ### [E3] Kích thước chi tiết & Tree Map (Class Sizes & Tree Map)
 - **Mục tiêu code**: Lập bảng Min/Max/Avg và vẽ biểu đồ Tree Map.
-- **Nội dung cần tính**: Tính toán Chiều Rộng (Width), Chiều Cao (Height) và Diện tích (Area) của toàn bộ các Bounding Box so với khung hình gốc.
-- **Giá trị**: Chứng minh định lượng dataset Zalo AI thuộc bài toán "Small Object Detection".
-- 💡 **Kỹ thuật Model áp dụng sau đó**: Bắt buộc dùng **[M2.1] SAHI**, Train độ phân giải cao **[M2.2] High-Res**, và mở **[M2.3] P2 Layer** cho YOLO.
+- **Nội dung cần tính**: Tính toán Chiều Rộng (Width), Chiều Cao (Height) và Diện tích (Area) của toàn bộ các Bounding Box so với khung hình gốc. Tại đây bổ sung hạng mục mới là **COCO Size Metrics**, trong đó bbox được phân loại theo diện tích pixel thật thành: **Small** (< 32x32 px), **Medium** (32x32 đến 96x96 px), **Large** (> 96x96 px).
+- **Giá trị**: Chứng minh định lượng dataset Zalo AI thuộc bài toán "Small Object Detection". Khi phần lớn bbox rơi vào nhóm Small, nghĩa là mô hình cần giữ thông tin chi tiết ở tầng feature map thấp để không mất đối tượng li ti.
+- 💡 **Kỹ thuật Model áp dụng sau đó**: Bắt buộc dùng **[M2.1] SAHI**, Train độ phân giải cao **[M2.2] High-Res**, và mở **[M2.3] P2 Layer** cho YOLO. Đây là lý do vì sao chuẩn COCO Size Metrics rất quan trọng với kiến trúc FPN: tầng P2/P3 giúp giữ đặc trưng cho vật thể nhỏ, còn tầng cao hơn thích hợp cho đối tượng lớn hơn.
 
 ### [E4] Bản đồ nhiệt Không gian (Spatial Heatmap)
 - **Mục tiêu code**: Vẽ Bản đồ nhiệt 2D trên khung ảnh.
@@ -47,6 +47,12 @@ Khi viết code Python phân tích file `train_traffic_sign_dataset.json`, chún
 - **Nội dung cần tính**: Tính tỷ lệ $Width/Height$ của mọi biển báo (Kỳ vọng đa số tập trung ở mức 1:1 do biển tròn/vuông).
 - **Giá trị**: Chứng minh tính đặc thù hình dáng của bộ dữ liệu Việt Nam.
 - 💡 **Kỹ thuật Model áp dụng sau đó**: Dữ liệu đầu vào bắt buộc để chạy **[M3.1] Anchor Box K-Means Clustering** cho Faster R-CNN.
+
+### [E7] Phân bố độ sáng (Brightness & Illumination)
+- **Mục tiêu code**: Dùng toàn bộ tập train, chuyển từng ảnh về ảnh xám (Grayscale), tính cường độ pixel trung bình của từng ảnh rồi vẽ biểu đồ Histogram.
+- **Nội dung cần tính**: Tính giá trị brightness trung bình cho toàn bộ tập train, đồng thời quan sát phân phối lệch về tối, trung bình hay sáng quá mức.
+- **Giá trị**: Dự đoán điều kiện ánh sáng của tập dữ liệu một cách toàn diện nhất. Vì dataset không lớn, việc lấy toàn bộ ảnh giúp đánh giá chính xác hơn so với sampling ngẫu nhiên và tránh bỏ sót vùng sáng/tối bất thường.
+- 💡 **Kỹ thuật Model áp dụng sau đó**: Nếu Histogram bị lệch rõ về tối/sáng, bắt buộc dùng **Color Jitter Augmentation** để tăng độ đa dạng ánh sáng, giúp mô hình robust hơn trước thay đổi điều kiện chiếu sáng. Đây là kỹ thuật quan trọng để tránh model quá phụ thuộc vào không gian ánh sáng của tập train.
 
 ---
 
