@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hệ thống Nhận diện Biển báo (SAHI)</title>
+    <!-- Tuân thủ DRY: Code CSS gộp chung trong 1 file thay vì viết inline -->
+    <link rel="stylesheet" href="/static/css/style.css?v=2">
+    <!-- Nạp Google Font cho Typography hiện đại -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="background-overlay"></div>
+
+    <main class="container">
+        <!-- Khu vực Tiêu đề -->
+        <header class="header">
+            <h1 class="glow-text">Hệ thống Nhận diện Biển báo Giao thông</h1>
+            <p>Phát triển bằng <strong>FastAPI, thuật toán SAHI, NMS & Vanilla JS/CSS</strong></p>
+        </header>
+
+        <!-- Khu vực Kéo thả Upload Ảnh (Glassmorphism Panel) -->
+        <section class="glass-panel upload-section" id="uploadZone">
+            <div class="upload-content">
+                <div class="icon-upload">📁</div>
+                <h3>Kéo thả ảnh vào đây</h3>
+                <p>Hoặc bấm để chọn file từ máy tính</p>
+                <input type="file" id="fileInput" accept="image/*" hidden>
+            </div>
+            
+            <!-- Vùng hiển thị hiệu ứng Loading Scanning -->
+            <div id="loadingOverlay" class="loading-overlay hidden">
+                <div class="scanner-line"></div>
+                <p class="loading-text">SAHI đang băm ảnh và dự đoán...</p>
+            </div>
+        </section>
+
+        <!-- Khu vực hiển thị Kết quả -->
+        <section class="glass-panel result-section hidden" id="resultZone">
+            <h3>Kết quả Phân tích</h3>
+            <!-- Canvas là thẻ chuyên dụng để vẽ Bounding Box bằng JS -->
+            <div class="canvas-container">
+                <canvas id="imageCanvas"></canvas>
+            </div>
+            
+            <!-- Danh sách các biển báo tìm được (hiển thị dạng Badge) -->
+            <div class="labels-container" id="labelsList">
+                <!-- Nội dung sẽ được sinh tự động bằng JS -->
+            </div>
+            
+            <button class="btn-primary" id="btnReset">Phân tích ảnh khác</button>
+        </section>
+    </main>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>

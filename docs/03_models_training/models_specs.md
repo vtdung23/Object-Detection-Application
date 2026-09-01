@@ -67,10 +67,12 @@ Tổng Loss = $\lambda_1 L_{cls} + \lambda_2 L_{box} + \lambda_3 L_{dfl}$
 - **Khối lượng tính toán (GFLOPs):** ~130 GFLOPs.
 
 ### 2.2 Thiết lập Huấn luyện (Training Config)
+- **Tỷ lệ chia dữ liệu:** 90% Train / 10% Validation. Đo lường Validation Loss (bằng mẹo no_grad kết hợp FrozenBatchNorm) để chọn ra Best Model.
 - **Độ phân giải đầu vào:** Tự động scale sao cho cạnh nhỏ nhất là 800px.
 - **Thuật toán Tối ưu (Optimizer):** `SGD` (`lr=0.005`, `momentum=0.9`, `weight_decay=0.0005`). Với ResNet, SGD kèm Momentum luôn mang lại sự hội tụ ổn định và sâu hơn so với các thuật toán họ Adam.
+- **Lịch trình LR (Learning Rate Scheduler):** `StepLR`. Hạ tốc độ học xuống 10 lần ở Epoch thứ 10 để mô hình hạ cánh êm ái, chống dao động và chống học vẹt.
 - **Batch Size:** 4 (Do kiến trúc Two-stage rất tốn VRAM).
-- **Số vòng lặp (Epochs):** 10.
+- **Số vòng lặp (Epochs):** 15.
 
 ### 2.3 Cơ chế Hàm độ lỗi (Loss Functions)
 - **RPN Loss:** Gồm 2 hàm: Objectness Loss (BCE) để phân biệt có vật thể hay nền, và RPN Box Loss (Smooth L1).
@@ -82,7 +84,7 @@ Tổng Loss = $\lambda_1 L_{cls} + \lambda_2 L_{box} + \lambda_3 L_{dfl}$
 
 ### 2.5 Bản chất Kỹ thuật: Quy trình vòng lặp học tập của Faster R-CNN
 Dây chuyền Two-stage của Faster R-CNN trải qua 5 bước cực kỳ cồng kềnh nhưng độ chính xác lại vươn lên đỉnh cao của học thuật:
-0. **Tiền xử lý (BBox-Safe Crop trên CPU):** Khác với YOLO dùng Mosaic, mô hình này dùng `Albumentations` cắt ảnh ngẫu nhiên (On-the-fly Random Crop). Kích thước khuôn cắt chốt cứng là `512x512` (Vì ảnh gốc Zalo AI chỉ cao 626px, 512 là giới hạn Power of 2 an toàn nhất). Cụ thể cắt bao nhiêu lần? Mỗi lần nạp 1 bức ảnh vào GPU (ở mỗi Epoch), CPU chỉ tung xúc xắc cắt đúng **1 lần duy nhất** với xác suất `p=0.3` (tức là 30% khả năng bị cắt 512x512, 70% giữ nguyên ảnh gốc). Trải qua 50 Epochs, 1 bức ảnh gốc sẽ sinh ra khoảng 15 phiên bản bị cắt ở 15 tọa độ khác nhau, và 35 lần giữ nguyên. Điều này giúp AI vừa học được chi tiết cục bộ (khi bị cắt phóng to), vừa học được bối cảnh toàn cục (khi giữ nguyên). Nếu nhát cắt chém mất $> 50\%$ diện tích biển báo (`min_visibility=0.5`), hàm `RandomSizedBBoxSafeCrop` lập tức vứt bỏ và tung xúc xắc cắt lại, đảm bảo AI không bao giờ học nhầm "biển báo cụt".
+0. **Tiền xử lý (BBox-Safe Crop trên CPU):** Khác với YOLO dùng Mosaic, mô hình này dùng `Albumentations` cắt ảnh ngẫu nhiên (On-the-fly Random Crop). Kích thước khuôn cắt chốt cứng là `512x512` (Vì ảnh gốc Zalo AI chỉ cao 626px, 512 là giới hạn Power of 2 an toàn nhất). Cụ thể cắt bao nhiêu lần? Mỗi lần nạp 1 bức ảnh vào GPU (ở mỗi Epoch), CPU chỉ tung xúc xắc cắt đúng **1 lần duy nhất** với xác suất `p=0.3` (tức là 30% khả năng bị cắt 512x512, 70% giữ nguyên ảnh gốc). Trải qua 10 Epochs, 1 bức ảnh gốc sẽ sinh ra khoảng 3 phiên bản bị cắt ở 3 tọa độ khác nhau, và 7 lần giữ nguyên. Điều này giúp AI vừa học được chi tiết cục bộ (khi bị cắt phóng to), vừa học được bối cảnh toàn cục (khi giữ nguyên). Nếu nhát cắt chém mất $> 50\%$ diện tích biển báo (`min_visibility=0.5`), hàm `RandomSizedBBoxSafeCrop` lập tức vứt bỏ và tung xúc xắc cắt lại, đảm bảo AI không bao giờ học nhầm "biển báo cụt".
 1. **Trích xuất Đặc trưng (ResNet-50 & FPN):** Ảnh nạp vào bị hàng ngàn ma trận Tích chập (Convolutional Kernel 3x3) trượt qua để tìm viền và hình khối, nén lại thành khối ma trận đặc trưng.
    - **Skip Connection:** Khắc phục lỗi Vanishing Gradient (Khi tín hiệu lùi qua 50 lớp nơ-ron, Gradient bị nhân liên tiếp với số $<1$ và tiêu biến về 0). Nhờ đường vòng $F(x)+x$, đạo hàm bằng 1 giữ cho Gradient truyền thẳng về gốc mạng.
    - **FPN (Feature Pyramid):** Lớp nông rất Nét nhưng Ngu ngốc, lớp sâu rất Thông minh nhưng Mờ nhòe. FPN dùng Lateral Connection cộng dồn ma trận, đúc ra Kim tự tháp đặc trưng vừa hiểu ngữ nghĩa vừa sắc nét tọa độ.
