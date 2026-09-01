@@ -49,10 +49,10 @@ Tài liệu được thiết kế làm "Cẩm nang bảo vệ đồ án". Dùng 
   - *Bước 1 (Tính toán Loss Đồng thời):* Bình thường $L_{cls}$ dùng Binary Cross Entropy (BCE). Nhưng khi bật `fl_gamma=2.0`, BCE bị vứt bỏ và thay thế bằng công thức Focal Loss: $FL(p_t) = -\alpha_t (1 - p_t)^\gamma \log(p_t)$. Focal Loss sẽ "bóp nghẹt" (đưa về 0) điểm sai số của những biển báo to/dễ, và giữ nguyên điểm sai số của những biển báo mờ/khó. Sau đó, kết quả Focal Loss này tiếp tục được nhân với hệ số $\lambda_{cls} = 2.0$, còn $L_{box}$ chỉ được nhân với $\lambda_{box} = 1.0$. Công thức cuối cùng trở thành: **$Loss_{total} = 1.0 \cdot L_{box} + 2.0 \cdot FocalLoss + ...$**
   - *Bước 2 (Lan truyền ngược - Backpropagation):* PyTorch sẽ tính đạo hàm (Gradient) của $Loss_{total}$ truyền ngược về các nơ-ron. Vì thành phần phân loại (Focal Loss) vừa được nhân 2 (`cls=2.0`), vừa chỉ giữ lại mẫu khó (`fl_gamma=2.0`), nên dòng thác Gradient dội về từ nhánh Phân loại (Classification Head) sẽ **to và mạnh gấp đôi** so với nhánh Vẽ khung (Box Head), đồng thời nó mang theo 100% thông tin của các "Biển báo khó".
   - *Bước 3 (Cập nhật Trọng số - Weight Update):* Thuật toán tối ưu AdamW nhận được dòng thác Gradient này. Nó thấy rằng: "À, ông sếp đang gào thét đòi sửa lỗi Phân loại của mấy cái biển báo mờ!". Thế là AdamW sẽ dồn phần lớn lực lượng để tinh chỉnh (update) các trọng số (Weights) nhằm giúp AI đọc chữ tốt hơn, thay vì phí sức đi nắn nót lại cái viền khung (Bounding box). Đây chính là nghệ thuật điều hướng AI bằng Toán học!
-- **Augmentation: Mosaic (`1.0`) & Random Shift (`translate=0.2`):**
+- **Augmentation: Mosaic (`1.0`) + Random Shift (`translate=0.2`) + Độ sáng (`ColorJitter` / `RandomBrightnessContrast`):**
   - *Dùng cái này có thực sự cần thiết không?* **Bắt buộc phải có!** Khi chạy Script thống kê tọa độ trên toàn bộ Dataset Zalo, kết quả cho thấy một sự thật phũ phàng: Có tới **67.4%** lượng biển báo nằm chễm chệ ở **Chính giữa (Center Bias)** của bức ảnh (Tọa độ X từ 0.33 đến 0.66). Nếu AI học chay từ tập dữ liệu này, nó sẽ bị "Mù lòa" ở các khu vực rìa mép (chỉ chiếm 15-17%). Lệnh `translate=0.2` sẽ bứng cái biển báo từ tâm và quăng văng ngẫu nhiên ra 4 mép của bức ảnh, ép AI phải quét tìm khắp nơi.
-  - *Kỹ thuật này nằm ở khâu nào của YOLO?* Nó nằm ở khâu **DataLoader (Tiền xử lý trên CPU)**, diễn ra *trước khi* ảnh được nạp vào GPU để học. Cứ mỗi vòng lặp, CPU sẽ bốc ngẫu nhiên 4 bức ảnh khác nhau, cắt vụn chúng ra, dùng kỹ thuật Mosaic ghép lại thành 1 bức duy nhất, sau đó dịch chuyển Random Shift, dập thêm các bộ lọc nhiễu rồi mới đóng gói ném sang cho GPU. Toàn bộ bối cảnh giao thông hỗn loạn này là dữ liệu "giả lập" (On-the-fly) sinh ra liên tục theo thời gian thực để trui rèn bản lĩnh của AI, giúp nó không bao giờ học vẹt 1 bức ảnh 2 lần!
   - *Bản chất kỹ thuật (Technical Mechanics):* Thuật toán Mosaic chọn ngẫu nhiên một điểm giao cắt (Crosshair) trên khung canvas 1280x1280. Sau đó nó chèn 4 bức ảnh vào 4 góc phần tư của lưới và cắt bỏ phần thừa. Quá trình này vô tình thu nhỏ kích thước thực tế của biển báo, ép AI phải học cách nhận diện các vật thể ở rất xa. Tiếp đó, lệnh `translate=0.2` áp dụng **Ma trận Biến đổi Affine (Affine Transformation Matrix)** để dịch chuyển toàn bộ tọa độ ma trận điểm ảnh (Pixels) đi một độ lệch (Offset) ngẫu nhiên tối đa 20% theo trục X và Y. Những biển báo bị dịch chuyển văng ra khỏi mép ảnh sẽ tự động bị cắt gọt lại tọa độ Bounding Box (Bounding Box Clipping).
+  - *Khắc phục lỗi E7 (Độ sáng / Exposure):* Theo phân tích E7, nhiều hình ảnh Zalo AI bị ảnh hưởng bởi góc chụp, mưa, nắng hoặc bóng đổ, khiến biển báo bị tối quá mức hoặc quá sáng làm mất độ contrast. Vì vậy, chúng ta bổ sung kỹ thuật **Color Jitter** hoặc **RandomBrightnessContrast** ở mức nhẹ (`brightness=0.15`, `contrast=0.15`, `saturation=0.10`). Mục tiêu không phải phá vỡ hình dạng biển báo, mà là để mô hình quen với các trạng thái ánh sáng khác nhau trước khi đi vào học chính quy. Chính kỹ thuật này đã trở thành "biện pháp khắc phục từ E7" để giúp model ổn định hơn khi ra ngoài dữ liệu lab.
   - *Ảnh hưởng khổng lồ đến quá trình Train:*
     1. **Hack dung lượng VRAM:** Thay vì phải tăng Batch Size lên 32 để AI nhìn thấy nhiều ảnh cùng lúc (làm cháy GPU), kỹ thuật Mosaic giúp Batch Size = 8 nhưng lại mang chứa dung lượng bối cảnh của $8 \times 4 = 32$ bức ảnh khác nhau.
     2. **Ổn định Batch Normalization (BN):** Sự đa dạng cực lớn trong mỗi lô ảnh (Batch) giúp các lớp tính toán chuẩn hóa (BatchNorm) tính ra được phương sai (Variance) cực kỳ chuẩn xác, tránh tình trạng dòng Gradient bị giật cục.
@@ -65,9 +65,34 @@ Tài liệu được thiết kế làm "Cẩm nang bảo vệ đồ án". Dùng 
     - *Cơ chế của AdamW (Adaptive Moment Estimation with Weight Decay):* Thay vì dùng chung một Tốc độ học (Learning Rate - LR) cho toàn mạng như SGD cổ điển, Adam tự động tính toán ra các LR riêng biệt cho từng tham số dựa trên Động lượng bậc 1 (Mean) và bậc 2 (Variance) của Gradient. Chữ "W" đại diện cho Decoupled Weight Decay: Kỹ thuật này tách rời khâu Phạt trọng số (L2 Regularization) ra khỏi Gradient, áp dụng trừ trực tiếp vào trọng số gốc. Về mặt toán học, nó triệt tiêu các trọng số phình to quá mức, ngăn chặn tuyệt đối hiện tượng Học vẹt (Overfitting).
     - *Cơ chế của Cosine Annealing:* Đây là bộ lập lịch Tốc độ học (LR Scheduler). Khởi đầu chu kỳ, nó đẩy LR lên rất cao để mạng bước những sải chân dài, giúp thoát khỏi các hố sâu cục bộ (Local Minima). Sau đó, hàm số suy giảm LR sẽ bám theo hình dáng của đường cong Cosine (từ góc 0 đến Pi): Giảm từ từ lúc đầu, lao dốc ở giữa, và là phẳng dần khi tiến về những Epoch cuối cùng. Nhờ sải chân được thu hẹp dần một cách mượt mà, mạng Nơ-ron có thể "hạ cánh" chính xác xuống đáy của hố Loss (Global Minima) mà không xảy ra hiện tượng vọt lố (Overshooting).
 
+### TẢI DỮ LIỆU & CHUẨN HÓA DẠNG COCO -> YOLO
+Trước khi vào giai đoạn huấn luyện, dữ liệu được kéo thẳng từ Hugging Face bằng `snapshot_download` thay cho cách cắm trực tiếp đường dẫn local. Cấu hình chính thức là:
+
+```python
+import os
+from huggingface_hub import snapshot_download
+
+os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "1"
+
+repo_root = snapshot_download(
+    repo_id="zalo-ai/traffic-sign-dataset",
+    repo_type="dataset",
+    allow_patterns=["**/*.json", "**/*.jpg", "**/*.png", "**/*.jpeg"],
+    local_dir="./dataset",
+)
+```
+
+Tại sao phải dùng cách này? Việc tải file từ Hugging Face bằng phương thức khởi tạo đường dẫn local đơn giản dễ gặp lỗi giải nén Brotli hoặc sai định dạng khi dataset được lưu dưới dạng archive nén. `hf_transfer` tích hợp lõi Rust giúp việc kéo file từ hub ổn định hơn, đồng bộ cho cả Colab, máy chủ và laptop cá nhân. Sau khi dữ liệu về, ta không train thẳng trên JSON gốc vì dữ liệu Zalo AI lưu theo định dạng COCO. Vậy nên quy trình chuẩn hóa là:
+1. Đọc JSON gốc, lấy trường `images` và `annotations`.
+2. Chuyển bbox COCO `[x, y, width, height]` sang YOLO `[class_id, cx, cy, w, h]` theo tỷ lệ ảnh.
+3. Sao chép ảnh vào `data/yolo_format/images` và nhãn vào `data/yolo_format/labels`.
+4. Sinh file `dataset.yaml` để YOLOv8/RT-DETR đọc đúng định dạng.
+
+Đây là giai đoạn Data Conversion đã được thực hiện ở Bước 2 và được tích hợp trực tiếp vào kế hoạch Train ở Bước 3 để đảm bảo đầu vào model luôn đồng nhất.
+
 ### TỔNG QUAN BẢN CHẤT KỸ THUẬT: BỨC TRANH TOÀN CẢNH (THE BIG PICTURE)
 Nếu ghép tất cả các kỹ thuật trên vào một quy trình (Vòng lặp học tập YOLOv8) theo trình tự thời gian, ta sẽ thấy sự phối hợp cực kỳ logic và đáng sợ của chúng:
-1. **Khởi động (DataLoader trên CPU):** CPU tung đòn "phá bĩnh" đầu tiên. Nó dùng **Mosaic** đập nhỏ 4 bức ảnh nén vào 1 lưới, làm các biển báo vốn đã nhỏ nay còn teo tóp lại. Tiếp đó dùng **Affine Matrix (translate)** văng các biển báo vốn ở chính giữa văng tít ra 4 góc lề. Nó ném sang cho GPU một bức ảnh "địa ngục" chưa từng tồn tại.
+1. **Khởi động (DataLoader trên CPU):** CPU tung đòn "phá bĩnh" đầu tiên. Nó dùng **Mosaic** đập nhỏ 4 bức ảnh nén vào 1 lưới, làm các biển báo vốn đã nhỏ nay còn teo tóp lại. Tiếp đó dùng **Affine Matrix (translate)** văng các biển báo vốn ở chính giữa văng tít ra 4 góc lề. Bên cạnh đó, Bộ hiện **ColorJitter / RandomBrightnessContrast** sẽ điều chỉnh mức sáng nhẹ để khắc phục phân tích E7 về ánh sáng không đồng nhất. Nó ném sang cho GPU một bức ảnh "địa ngục" chưa từng tồn tại.
 2. **Kính lúp & Màng lọc trích xuất (Lan truyền tiến qua Backbone):** Bức ảnh địa ngục đi vào mạng nơ-ron (CSPDarknet). Tại đây, AI không nhìn toàn cảnh, mà dùng hàng ngàn ma trận nhỏ 3x3 (gọi là Kernels/Filters) trượt rà soát khắp bức ảnh. 
    - *Bản chất toán học (Convolution):* Tại mỗi điểm trượt, nó lấy giá trị pixel của ảnh nhân vô hướng (Dot Product) với trọng số của Kernel rồi cộng tổng lại. Nếu điểm ảnh đó có họa tiết (ví dụ: một đường chéo) khớp hoàn toàn với thiết kế của Kernel, phép nhân sẽ cho ra một con số khổng lồ (High Activation). Nhờ phép toán này, lớp nông nhất sẽ tìm ra "Cạnh thẳng", "Cạnh cong". Các lớp sâu hơn tiếp tục nhân chập các cạnh này lại để suy luận ra "Hình tròn", "Hình tam giác", và cuối cùng là "Biển báo".
    - *Phép màu của P2:* Càng đi sâu, ảnh càng bị bóp nhỏ (Stride) để ép các khái niệm lại với nhau. Nếu để bức ảnh chạy thẳng xuống các tầng sâu (P3, P4, P5), biển báo li ti sẽ bị bóp nát bét trước khi AI kịp nhận ra hình tam giác. Cạm bẫy Mosaic được hóa giải hoàn toàn vì ta đã thức tỉnh **nhánh P2 Layer** ở tầng cạn. Đóng vai trò như một chiếc kính lúp khổng lồ (Feature Map 320x320), P2 chắt lọc và giữ lại nguyên vẹn các kích hoạt (Activation) của những biển báo li ti bị văng ra rìa trước khi chúng bị bóp nát.

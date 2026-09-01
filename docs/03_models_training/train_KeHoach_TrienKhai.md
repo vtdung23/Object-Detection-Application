@@ -16,7 +16,7 @@ Phần Web App (Dự đoán 1 ảnh tĩnh tải lên) được ưu tiên tối �
 ### 🤖 2. Phân bổ cho mô hình YOLOv8
 - **Cấu trúc mạng**: Bật nhánh P2 Layer (`yolov8s-p2.yaml`).
 - **Hàm Loss**: Bật Focal Loss (`fl_gamma=2.0`), cấu hình tăng mạnh `cls_gain=2.0` cao hơn gấp đôi so với `box_gain=1.0`.
-- **Augmentation**: Kích hoạt Mosaic cường độ cao (`mosaic=1.0`), Random Shift (thông qua `translate=0.2` để trị Center Bias).
+- **Augmentation**: Kích hoạt Mosaic cường độ cao (`mosaic=1.0`), Random Shift (thông qua `translate=0.2` để trị Center Bias), và bổ sung chiến thuật **Augmentation Độ sáng** bằng `ColorJitter` / `RandomBrightnessContrast` để khắc phục hiện tượng E7: nhiều biển báo bị tối hoặc thiếu sáng nghiêm trọng theo thời tiết và góc chụp.
 - **Siêu tham số Training**: Thiết lập `imgsz=1280`, `max_det=50`, dùng Optimizer `AdamW` + `Cosine Annealing LR` (`cos_lr=True`).
 
 ### 🤖 3. Phân bổ cho mô hình Faster R-CNN
@@ -27,6 +27,43 @@ Phần Web App (Dự đoán 1 ảnh tĩnh tải lên) được ưu tiên tối �
 
 ### 🤖 4. Phân bổ cho mô hình RT-DETR
 - **Xử lý tài nguyên (OOM)**: RT-DETR ngốn VRAM khủng khiếp. Phải áp dụng thuật toán **Gradient Accumulation** (Ép batch size thật nhỏ và tích lũy đạo hàm) để model học được ảnh `imgsz=1280` mà không làm chết GPU máy chủ.
+
+---
+
+## BƯỚC 0: TẢI DỮ LIỆU TỪ HUGGING FACE VÀ CHUẨN HÓA DỮ LIỆU
+
+Trước khi vào giai đoạn train, toàn bộ dữ liệu sẽ được kéo trực tiếp từ Hugging Face bằng `snapshot_download` thay vì phụ thuộc vào đường dẫn local trên máy cá nhân. Đây là lựa chọn bắt buộc để đồng bộ hóa môi trường và tránh lỗi giải nén Brotli trong các file dataset nén bởi `hf_transfer`.
+
+```python
+import os
+from huggingface_hub import snapshot_download
+
+# Bật Rust core transfer để chống lỗi giải nén Brotli / tarball trên dataset HF
+os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "1"
+
+dataset_root = snapshot_download(
+    repo_id="zalo-ai/traffic-sign-dataset",
+    repo_type="dataset",
+    allow_patterns=["**/*.json", "**/*.jpg", "**/*.png", "**/*.jpeg", "**/images/**"],
+    local_dir="./dataset",
+    local_dir_use_symlinks=False,
+)
+
+print("Dataset đã được tải về:", dataset_root)
+```
+
+Lưu ý kỹ thuật quan trọng:
+- Không dùng đường dẫn local cố định như `D:/.../train_traffic_sign_dataset.json` trong kế hoạch chính thức vì môi trường máy chủ và Colab khác nhau.
+- `snapshot_download` thuộc `huggingface_hub` giúp tải về đúng cây thư mục dataset, giữ nguyên cấu hình JSON và hình ảnh gốc.
+- `HF_HUB_ENABLE_HF_TRANSFER=1` kết hợp lõi Rust `hf_transfer` giúp việc tải/giải nén dữ liệu ổn định hơn nhiều, tránh lỗi `Brotli` hoặc `tarfile` khi dataset có cấu trúc nén.
+
+Sau khi dữ liệu về máy, ta thực hiện luồng chuẩn hóa theo Bước 2 đã làm sẵn:
+1. Đọc file COCO JSON gốc.
+2. Chuyển bbox từ dạng COCO `[x, y, width, height]` sang YOLO `[class_id, cx, cy, w, h]` theo tỷ lệ ảnh.
+3. Sao chép ảnh gốc vào `data/yolo_format/images/` và tạo file nhãn tương ứng trong `data/yolo_format/labels/`.
+4. Sinh ra file `dataset.yaml` cho việc train 3 mô hình.
+
+Đây là bước bắt buộc để chuẩn hóa dữ liệu trước khi vào training, đồng thời tránh sai lệch về định dạng do dữ liệu gốc của Zalo AI đang ở chuẩn COCO.
 
 ---
 
@@ -94,10 +131,12 @@ results = model.train(
     cls=2.0,            # Tăng cls_gain, ép soi kỹ hình vẽ bên trong biển báo
     box=1.0,
     
-    # --- Augmentation & Khắc phục Center Bias ---
+    # --- Augmentation & Khắc phục Center Bias + Độ sáng ---
     mosaic=1.0,         # Trộn ảnh liên tục
     degrees=10.0,       # Xoay nhẹ
     translate=0.2,      # Random Shift văng biển báo ra mép ảnh
+    # Bổ sung ColorJitter / RandomBrightnessContrast để khắc phục E7
+    # khi ảnh quá tối hoặc quá sáng làm biển báo mất độ tương phản.
     
     # --- Thông số Hệ thống ---
     project='zalo_traffic',

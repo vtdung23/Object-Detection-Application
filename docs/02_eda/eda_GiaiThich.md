@@ -28,6 +28,14 @@
 - **Khái niệm**: Tưởng tượng bạn xếp chồng toàn bộ 4500 bức ảnh lên nhau, sau đó chấm một điểm đỏ vào vị trí tâm của mọi biển báo giao thông xuất hiện. Nơi nào có nhiều dấu chấm đỏ chồng lên nhau, nơi đó sẽ "nóng" lên (chuyển sang màu đỏ rực), nơi nào ít sẽ có màu xanh lạnh. Đó là bản đồ nhiệt.
 - **Ý nghĩa thực tiễn**: Cho ta biết **vị trí địa lý ưu tiên** của vật thể trên khung hình. Trong dataset này, heatmap sẽ đỏ rực ở nửa trên bên phải của ảnh. Từ đó, ta rút ra kinh nghiệm để tinh chỉnh thuật toán Augmentation: Cấm hệ thống tự động cắt (Crop) bỏ phần trên bên phải của bức ảnh khi sinh dữ liệu huấn luyện, vì như thế là tự cắt đi biển báo.
 
+### 5.7. Chuyển đổi định dạng dữ liệu (COCO -> YOLO)
+- **Khái niệm**: Dữ liệu gốc của Zalo AI lưu theo chuẩn COCO với cấu trúc JSON gồm `images`, `annotations`, `categories`. Tuy nhiên, các mô hình YOLO và RT-DETR không đọc trực tiếp JSON này theo cách của COCO; thay vào đó, chúng cần file label `.txt` riêng cho từng ảnh, trong đó mỗi dòng biểu diễn một bbox dưới dạng `[class_id, x_center, y_center, width, height]` được chuẩn hóa theo tỷ lệ ảnh.
+- **Lý do phải chuyển đổi**: Đây là bước bắt buộc để đưa dữ liệu từ “formatted dataset” sang “train-ready dataset”. Nếu không chuẩn hóa, các model sẽ nhận nhãn lệch và không hiểu trong ảnh có bao nhiêu pixel, tọa độ ở đâu, hộp bao phủ tương ứng với class nào.
+- **Sự khác biệt input giữa các model**:
+  - **Faster R-CNN / Torchvision**: đọc trực tiếp annotation dạng COCO, không cần file `.txt` cho từng ảnh, nhưng cần `Dataset` class custom vừa nạp JSON vừa xử lý bbox.
+  - **YOLOv8 / RT-DETR**: đòi hỏi mỗi ảnh phải có đồng bộ một file label `.txt` và tọa độ chuẩn hóa theo tỷ lệ ảnh để dễ tính toán IoU, loss và NMS.
+- **Giá trị thực tiễn**: Bước này làm cho quá trình training thống nhất và dễ quản lý. Ngoài ra, việc lưu ra thư mục mới `data/yolo_format/images` và `data/yolo_format/labels` giúp tập dữ liệu train sạch, không làm lẫn giữa file gốc và file chuyển đổi.
+
 ---
 
 ## 6. Giải thích chi tiết Menu Lựa chọn Kỹ thuật Triển khai

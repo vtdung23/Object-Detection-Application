@@ -54,6 +54,15 @@ Khi viết code Python phân tích file `train_traffic_sign_dataset.json`, chún
 - **Giá trị**: Dự đoán điều kiện ánh sáng của tập dữ liệu một cách toàn diện nhất. Vì dataset không lớn, việc lấy toàn bộ ảnh giúp đánh giá chính xác hơn so với sampling ngẫu nhiên và tránh bỏ sót vùng sáng/tối bất thường.
 - 💡 **Kỹ thuật Model áp dụng sau đó**: Nếu Histogram bị lệch rõ về tối/sáng, bắt buộc dùng **Color Jitter Augmentation** để tăng độ đa dạng ánh sáng, giúp mô hình robust hơn trước thay đổi điều kiện chiếu sáng. Đây là kỹ thuật quan trọng để tránh model quá phụ thuộc vào không gian ánh sáng của tập train.
 
+### [E8] Chuyển đổi định dạng dữ liệu (COCO -> YOLO)
+- **Mục tiêu code**: Tạo bước chuẩn hóa dữ liệu trước khi train. Dữ liệu gốc được lưu theo chuẩn COCO (`images`, `annotations`, `categories`), nhưng các mô hình YOLO/RT-DETR yêu cầu định dạng biểu diễn lại dưới dạng file `.txt` cho từng ảnh.
+- **Nội dung cần tính**: Chuyển bộ tọa độ bounding box từ dạng COCO `[x, y, width, height]` (tính theo pixel gốc) sang dạng YOLO `[class_id, x_center, y_center, width, height]` với các giá trị được chuẩn hóa theo kích thước ảnh (`0..1`). Kết quả lưu vào thư mục mới `data/yolo_format/images/` và `data/yolo_format/labels/` để tránh rác trong thư mục gốc.
+- **Giá trị**: Giúp chuẩn hóa input cho mọi mô hình. Faster R-CNN thường đọc trực tiếp từ COCO JSON, trong khi YOLO và RT-DETR cần file `.txt` tương ứng với từng ảnh. Nếu bỏ qua bước này, mô hình sẽ không hiểu tọa độ nhãn đúng cách hoặc sẽ nhận số liệu lệch không thể train được.
+- 💡 **Khác biệt input giữa các model**:
+  - **Faster R-CNN / torchvision**: đọc trực tiếp cấu trúc COCO, thường nhận `bbox` ở dạng pixel và `labels` là category id.
+  - **YOLOv8 / RT-DETR**: yêu cầu file `.txt` riêng cho mỗi ảnh, trong đó mỗi dòng là một đối tượng và tọa độ phải chuẩn hóa theo tỷ lệ ảnh.
+- **Lưu ý thực tế**: Đây là bước bắt buộc trong pipeline, vì mô hình không thể auto-translate giữa hai định dạng annotation khác nhau. Từ khóa để hiểu là: COCO là định dạng “gốc/đầy đủ”, YOLO là định dạng “train-ready”.
+
 ---
 
 ## PHẦN II: KẾ HOẠCH TỐI ƯU MÔ HÌNH (Áp dụng khi Train/Test)
