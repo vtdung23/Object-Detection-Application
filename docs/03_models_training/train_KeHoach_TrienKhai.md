@@ -26,7 +26,8 @@ Phần Web App (Dự đoán 1 ảnh tĩnh tải lên) được ưu tiên tối �
 - **Siêu tham số Training**: Code cũ sử dụng Optimizer `SGD (momentum=0.9)` hoạt động cực kỳ ổn định với kiến trúc ResNet của PyTorch. Ta sẽ giữ nguyên `SGD` thay vì ép dùng `AdamW` như 2 model kia để tránh hỏng model.
 
 ### 🤖 4. Phân bổ cho mô hình RT-DETR
-- **Xử lý tài nguyên (OOM)**: RT-DETR ngốn VRAM khủng khiếp. Phải áp dụng thuật toán **Gradient Accumulation** (Ép batch size thật nhỏ và tích lũy đạo hàm) để model học được ảnh `imgsz=1280` mà không làm chết GPU máy chủ.
+- **Xử lý tài nguyên (OOM)**: RT-DETR ngốn VRAM khủng khiếp vì ma trận Self-Attention phình theo $O(N^2)$ với số pixel. Giải pháp chốt hạ là **giảm độ phân giải xuống `imgsz=640`** (thay vì cố giữ 1280 rồi phải chữa cháy bằng Gradient Accumulation). Ở 640, lưới đặc trưng chỉ còn $20 \times 20 = 400$ token thay vì $40 \times 40 = 1{,}600$ token, tức bộ nhớ Attention nhẹ đi 16 lần — vừa hết OOM, vừa rút ngắn thời gian train xuống mức chạy được trong hạn mức GPU của Kaggle.
+- **Bù đắp cho vật thể nhỏ**: Việc hạ độ phân giải không làm hỏng bài toán Small Object, vì nhiệm vụ này đã có **YOLOv8s-P2** (`imgsz=1280` + nhánh P2) đảm nhiệm ở khâu Training, và **SAHI** đảm nhiệm ở khâu Inference cho cả 3 mô hình.
 
 ---
 
@@ -205,13 +206,12 @@ from ultralytics import RTDETR
 
 model = RTDETR('rtdetr-l.pt')
 
-# Chống tràn RAM với Gradient Accumulation
+# Chống tràn RAM bằng cách hạ độ phân giải thay vì tích lũy đạo hàm
 results = model.train(
     data='dataset.yaml',
     epochs=50,
-    imgsz=1280,         # Vẫn bắt buộc giữ độ phân giải 1280
-    batch=2,            # Ép batch=2 để GPU Google Colab không bị chết (OOM)
-    accumulate=4,       # Tích lũy 4 step đạo hàm -> Batch ảo = 2 x 4 = 8
+    imgsz=640,          # Hạ từ 1280 -> 640: ma trận Attention nhẹ đi 16 lần, hết OOM
+    batch=8,            # Ảnh nhỏ lại nên nạp được batch thật, khỏi cần accumulate
     optimizer='AdamW',
     cos_lr=True,
     project='zalo_traffic',

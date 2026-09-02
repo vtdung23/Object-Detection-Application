@@ -76,7 +76,7 @@ Dựa trên kết quả từ Phần I, đây là các "Tuyệt chiêu" bắt bu�
 
 ### Nhóm M2: Trị bệnh "Vật thể siêu nhỏ" (Từ kết quả E3)
 - **[M2.1] Sử dụng SAHI (Inference)**: Cài đặt thư viện `sahi`. Lúc chạy Test, thay vì đưa ảnh gốc vào model, dùng SAHI cắt ảnh thành các ô nhỏ 512x512 quét đè lấp, giúp model soi rõ vật nhỏ. (Áp dụng cho cả 3 model: YOLO, Faster R-CNN, RT-DETR).
-- **[M2.2] High-Resolution Training**: Train với kích thước ảnh lớn `imgsz=1280` thay vì 640 để bảo toàn pixel vật thể (Áp dụng YOLO, RT-DETR).
+- **[M2.2] High-Resolution Training**: Train với kích thước ảnh lớn `imgsz=1280` thay vì 640 để bảo toàn pixel vật thể. **Chỉ áp dụng cho YOLOv8** (kết hợp nhánh P2). Riêng **RT-DETR phải dùng `imgsz=640`** vì ma trận Self-Attention của Transformer phình theo $O(N^2)$, để 1280 sẽ tràn VRAM và thời gian train vượt hạn mức GPU — chi tiết ở mục 3.6 của `models_specs.md`.
 - **[M2.3] Cấu hình P2 Layer (YOLOv8)**: Sửa file `yolov8.yaml` để mở thêm nhánh dự đoán P2 (bị downsample ít, có mắt lưới siêu dày 160x160). Kỹ thuật này sinh ra trọng số cực kỳ nhạy với biển báo li ti. (Chỉ áp dụng YOLO).
 
 ### Nhóm M3: Trị bệnh "Khung hình & Vị trí" (Từ kết quả E2, E4, E6)

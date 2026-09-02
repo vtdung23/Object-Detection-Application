@@ -112,9 +112,10 @@ Dây chuyền Two-stage của Faster R-CNN trải qua 5 bước cực kỳ cồn
 - **Khối lượng tính toán (GFLOPs):** ~114 GFLOPs.
 
 ### 3.2 Thiết lập Huấn luyện (Training Config)
-- **Độ phân giải đầu vào:** `1280 x 1280`. (Cần độ phân giải cực lớn để Self-Attention vươn vòi bao quát toàn bộ ngữ cảnh bức ảnh).
-- **Thủ thuật Chống OOM (Out-Of-Memory):** **Gradient Accumulation**. Khóa `batch_size = 2` nhưng cài `accumulate = 4`. Mô hình cộng dồn đạo hàm qua 4 chu kỳ liên tiếp mới cập nhật trọng số 1 lần, tạo hiệu ứng batch ảo là 8.
-- **Thuật toán Tối ưu (Optimizer):** `AdamW` + `Cosine Annealing`.
+- **Độ phân giải đầu vào:** `640 x 640`. (Đã hạ từ `1280` xuống `640` — xem biện luận đầy đủ tại mục **3.6**. Lý do ngắn gọn: ma trận Self-Attention phình theo $O(N^2)$ nên ảnh 1280 gây tràn VRAM, đồng thời thời gian train/inference vượt quá khuôn khổ đồ án).
+- **Kích thước Lô (Batch Size):** `8` trên Kaggle (`train_rtdetr_Kaggle.ipynb`, chạy song song 2 GPU T4 qua `device=[0, 1]`) và `4` trên Colab (`train_rtdetr.ipynb`, 1 GPU).
+- **Thủ thuật Chống OOM (Out-Of-Memory):** Sau khi hạ về `640`, bộ nhớ Attention giảm 16 lần nên **không còn phải dùng Gradient Accumulation** nữa. Kế hoạch ban đầu (`batch=2` + `accumulate=4` để tạo batch ảo bằng 8) chỉ là giải pháp chữa cháy cho mức `1280`; nay ta nạp thẳng `batch=8` thật, vừa đơn giản hơn vừa cho đạo hàm ổn định hơn batch ảo.
+- **Thuật toán Tối ưu (Optimizer):** `AdamW` + `Cosine Annealing` (`cos_lr=True`).
 - **Số vòng lặp (Epochs):** 50.
 
 ### 3.3 Cơ chế Hàm độ lỗi (Loss Functions)
@@ -123,12 +124,33 @@ Dây chuyền Two-stage của Faster R-CNN trải qua 5 bước cực kỳ cồn
 
 ### 3.4 Bản chất Kỹ thuật: Bức tranh toàn cảnh 5 bước của RT-DETR
 Khác hoàn toàn với tư duy "Trượt cửa sổ" của CNN (như YOLO, R-CNN), RT-DETR mang tư duy "Nhìn toàn cục" của Transformer:
-0. **Tiền xử lý (Nạp ảnh Panorama 1280px):** Trái ngược với Faster R-CNN phải cắt vụn ảnh ra 512x512, RT-DETR nuốt trọn bức ảnh toàn cảnh khổng lồ `1280x1280` để giữ lại 100% bối cảnh không gian (Ví dụ: Mô hình tự hiểu biển báo cấm rẽ thường đứng chung cột với biển cấm ngược chiều).
+0. **Tiền xử lý (Nạp ảnh Panorama 640px):** Trái ngược với Faster R-CNN phải cắt vụn ảnh ra 512x512, RT-DETR nuốt trọn bức ảnh toàn cảnh `640x640` để giữ lại 100% bối cảnh không gian (Ví dụ: Mô hình tự hiểu biển báo cấm rẽ thường đứng chung cột với biển cấm ngược chiều). Ta chấp nhận đánh đổi độ phân giải để giữ được toàn cảnh mà không làm nổ VRAM (mục 3.6).
 1. **Trích xuất cục bộ (HGNetv2 Backbone):** Dù là mạng Transformer, lớp đầu tiên của nó BẮT BUỘC phải là mạng Tích chập (CNN) HGNetv2. Lý do: Transformer rất ngu ngốc trong việc nhận diện viền/góc cạnh ở giai đoạn đầu. Mạng CNN sẽ giải quyết phần "chân tay" này và nén ảnh thành ma trận.
 2. **Cầu nối đa tầng (CCFM Neck):** Thay vì dùng FPN, RT-DETR dùng mô-đun lai CCFM (Cross-Scale Feature-fusion Module) để trộn lẫn ma trận từ tầng nông và tầng sâu, chuẩn bị "thức ăn" tinh gọn nhất trước khi tống vào lõi Transformer.
-3. **Bộ não Transformer (Self-Attention Decoder):** Đây là lõi sức mạnh. Mô hình ném vào không gian đúng 300 "Hạt giống" (Object Queries). Chẳng cần trượt cái cửa sổ nào cả! Mỗi hạt giống phóng tầm mắt bao quát toàn bộ 1,600 mảnh ghép bằng cơ chế toán học **Q-K-V (Query-Key-Value)**. Thao tác này hoàn toàn dựa trên Đại số tuyến tính: Nó dùng phép Nhân vô hướng (Dot Product) để đo **Cosine Similarity** (Độ tương đồng) giữa lệnh truy nã ($Q$) và biển quảng cáo của pixel ($K$). Sau khi trúng mục tiêu, nó dùng phép Cộng ma trận (Residual Connection) để "nuốt" trọn khối lượng dữ liệu thật ($V$) vào bản thân hạt giống. Trải qua 6 vòng lặp Decoder, 300 hạt giống này tự động bù trừ Offset (Độ lệch) và nở thành đúng 300 Khung dự đoán.
+3. **Bộ não Transformer (Self-Attention Decoder):** Đây là lõi sức mạnh. Mô hình ném vào không gian đúng 300 "Hạt giống" (Object Queries). Chẳng cần trượt cái cửa sổ nào cả! Mỗi hạt giống phóng tầm mắt bao quát toàn bộ 400 mảnh ghép (ảnh `640x640` nén 32 lần còn lưới `20x20`) bằng cơ chế toán học **Q-K-V (Query-Key-Value)**. Thao tác này hoàn toàn dựa trên Đại số tuyến tính: Nó dùng phép Nhân vô hướng (Dot Product) để đo **Cosine Similarity** (Độ tương đồng) giữa lệnh truy nã ($Q$) và biển quảng cáo của pixel ($K$). Sau khi trúng mục tiêu, nó dùng phép Cộng ma trận (Residual Connection) để "nuốt" trọn khối lượng dữ liệu thật ($V$) vào bản thân hạt giống. Trải qua 6 vòng lặp Decoder, 300 hạt giống này tự động bù trừ Offset (Độ lệch) và nở thành đúng 300 Khung dự đoán.
 4. **Khớp nối 1-1 & Tính Loss (Hungarian Algorithm):** Đây là cuộc cách mạng chấm dứt kỷ nguyên của NMS! R-CNN hay YOLO phọt ra 10,000 khung rồi phải dùng NMS xóa bớt. RT-DETR chỉ xuất đúng 300 khung. Nó dùng thuật toán **Bipartite Matching** (Kuhn-Munkres) trong thời gian đa thức $O(N^3)$ để lập Ma trận chi phí (Dựa trên $\mathcal{L}_{\text{L1}}$, $\mathcal{L}_{\text{GIoU}}$ và $\text{Focal Loss}$). Toán học giải bài toán Tối ưu Tổ hợp sao cho 5 cái biển báo thật được gán cho đúng 5 khung dự đoán với chi phí RẺ NHẤT (1-kèm-1). Sự thanh lịch tuyệt đối nằm ở chỗ: 5 khung khớp nhất được lôi ra tính Loss để bay về đích. 295 khung rớt đài còn lại bị ép gán nhãn "$\varnothing$" (Background) và lập tức chịu sự trừng phạt tàn khốc của **Focal Loss**, sinh ra dòng Gradient âm khổng lồ đè bẹp trọng số của chúng về 0. Toàn bộ rác nền tự động bị triệt tiêu bằng Toán học thuần túy mà không cần NMS!
 
-### 3.4 Yêu cầu Phần cứng & Hiệu năng
-- **Tài nguyên Training:** Cực kỳ "ăn" VRAM do tính chất ma trận vuông khổng lồ của Attention. Nếu không dùng Gradient Accumulation, card 16GB sẽ nổ tung ở ảnh 1280.
+### 3.5 Yêu cầu Phần cứng & Hiệu năng
+- **Tài nguyên Training:** Cực kỳ "ăn" VRAM do tính chất ma trận vuông khổng lồ của Attention. Nếu không dùng Gradient Accumulation, card 16GB sẽ nổ tung ở ảnh 1280. Đây chính là lý do ta chốt hạ độ phân giải xuống `640` (mục 3.6) thay vì cố đấm ăn xôi ở 1280.
 - **Tốc độ Inference:** ~60-80 FPS trên GPU. Cực kỳ xuất sắc, có thể dùng thay thế YOLO trong hệ thống thực tế.
+
+### 3.6 Biện luận: Tại sao hạ Độ phân giải từ `1280` xuống `640`?
+
+Đây là quyết định kỹ thuật quan trọng nhất của mô hình RT-DETR trong đồ án. Ba lý do chính:
+
+**1. Chi phí Self-Attention phình theo bình phương $O(N^2)$ — nguyên nhân trực tiếp gây OOM.**
+Khác với YOLOv8 (mạng tích chập, chi phí chỉ tăng tuyến tính theo số pixel), lõi Transformer phải tính ma trận điểm số $QK^T$ giữa **mọi cặp token** với nhau. Số token được lấy từ feature map sau khi nén 32 lần:
+- Ở `imgsz=1280`: lưới $40 \times 40 = 1{,}600$ token $\rightarrow$ ma trận Attention $1{,}600 \times 1{,}600 \approx 2{,}56$ triệu ô.
+- Ở `imgsz=640`: lưới $20 \times 20 = 400$ token $\rightarrow$ ma trận Attention $400 \times 400 = 160{,}000$ ô.
+
+Chỉ cần chia đôi cạnh ảnh, khối lượng bộ nhớ dành riêng cho Attention **giảm 16 lần**. Vì ma trận này phải được giữ nguyên trong VRAM suốt Forward Pass để phục vụ Backward Pass, đây chính là thủ phạm khiến card 16GB (T4/P100 trên Kaggle) văng lỗi `CUDA Out Of Memory` ở mức 1280 nếu không ép batch size xuống mức tối thiểu.
+
+**2. Đảm bảo thời gian huấn luyện & suy luận nằm trong khuôn khổ đồ án.**
+Kaggle chỉ cấp 30 giờ GPU miễn phí mỗi tuần cho cả 3 mô hình. Ở mức 1280, RT-DETR buộc phải chạy batch rất nhỏ nên số bước cập nhật trên mỗi epoch tăng vọt, kéo dài thời gian train tới mức không thể hoàn thành 50 epochs trong hạn mức (ghi chú thực nghiệm trong `train_rtdetr.ipynb`: *"Nếu để 1280 sẽ mất 15 tiếng"*). Hạ xuống 640 cho phép nâng batch lên 8, rút ngắn thời gian train, và quan trọng hơn là giữ được tốc độ suy luận (Inference) đủ nhanh để mô hình xứng đáng với chữ **RT (Real-Time)** trong tên gọi của nó.
+
+**3. Không đánh mất khả năng bắt vật thể nhỏ, vì ta đã có hàng phòng thủ khác.**
+Điểm yếu duy nhất của việc hạ độ phân giải là biển báo li ti bị teo nhỏ. Tuy nhiên bài toán này đã được xử lý ở hai tầng khác:
+- **Tầng kiến trúc:** Nhiệm vụ "soi vật thể siêu nhỏ" đã được giao cho **YOLOv8s-P2** (`imgsz=1280` + nhánh P2 Stride 4). RT-DETR giữ đúng vai trò của nó là chứng minh sức mạnh **Nhận thức Ngữ cảnh Toàn cục** (giải quyết hiện tượng Đồng xuất hiện E5), chứ không phải đi tranh phần việc của P2 Layer.
+- **Tầng suy luận:** Khi lên Web App, cả 3 mô hình đều được bọc trong **SAHI**. SAHI cắt ảnh gốc thành các mảnh nhỏ rồi phóng to trước khi nạp vào mạng, nên biển báo li ti vẫn được zoom cận cảnh bất kể `imgsz` lúc train là bao nhiêu.
+
+> **Tóm lại:** `imgsz=640` cho RT-DETR là lựa chọn bắt buộc để mô hình chạy được trên phần cứng thực tế, và là lựa chọn hợp lý vì nhiệm vụ vật thể nhỏ đã có YOLOv8-P2 + SAHI gánh vác.

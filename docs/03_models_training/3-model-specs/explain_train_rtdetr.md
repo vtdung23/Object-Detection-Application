@@ -52,7 +52,7 @@ save_dir = '/content/drive/MyDrive/DoAn_NhanDienBienBao'
 
 ---
 
-## Cell 6: Khởi tạo Kiến trúc Transformer (RT-DETR-L) và Kỹ thuật Gradient Accumulation
+## Cell 6: Khởi tạo Kiến trúc Transformer (RT-DETR-L) và Cấu hình chống OOM
 
 Đây là ô code đắt giá nhất và chứa nhiều hàm lượng chất xám nhất của toàn bộ quá trình huấn luyện RT-DETR.
 
@@ -66,24 +66,25 @@ model = RTDETR('rtdetr-l.pt')
 results = model.train(
     data='/content/dataset.yaml',
     epochs=50,
-    imgsz=1280,
+    imgsz=640,          # BẮT BUỘC ĐỂ 640 (Nếu để 1280 sẽ mất 15 tiếng như Kaggle)
 ```
-- **Ý nghĩa (`imgsz=1280`)**: Trả lời trực tiếp yêu cầu từ EDA. Biển báo giao thông Zalo AI cực kỳ nhỏ. Nếu thu nhỏ ảnh về 640, biển báo sẽ chỉ còn là một đốm nhiễu vài pixel, Attention Mechanism sẽ không thể nhận diện được hình dạng bên trong biển. Giữ nguyên 1280 là **điều kiện tiên quyết** để bảo toàn vật thể nhỏ.
+- **Ý nghĩa (`imgsz=640`)**: Đây là thông số đã được **hạ từ `1280` xuống `640`** so với bản kế hoạch ban đầu. Lý do kỹ thuật (biện luận đầy đủ tại mục **3.6** của `models_specs.md`):
+  - **Chống tràn bộ nhớ (OOM):** Lõi Transformer phải tính ma trận Attention giữa mọi cặp token. Ảnh `1280` sinh ra lưới đặc trưng $40 \times 40 = 1{,}600$ token, tức ma trận Attention nặng $1{,}600^2 \approx 2{,}56$ triệu ô. Ảnh `640` chỉ còn lưới $20 \times 20 = 400$ token, ma trận $400^2 = 160{,}000$ ô — **nhẹ hơn 16 lần**. Đây là khác biệt sống còn giữa "train được" và "văng CUDA Out Of Memory".
+  - **Thời gian chạy thực tế:** Chính comment trong notebook đã ghi lại kết quả thực nghiệm — để `1280` thì một lượt train ngốn tới **15 tiếng**, vượt xa hạn mức 30 giờ GPU/tuần mà Kaggle cấp cho cả 3 mô hình.
+  - **Vì sao không sợ mất vật thể nhỏ?** Nhiệm vụ "soi biển báo li ti" đã được giao cho **YOLOv8s-P2** (`imgsz=1280` + nhánh P2 Stride 4), còn khi lên Web App thì cả 3 mô hình đều được bọc trong **SAHI** để zoom cận cảnh. RT-DETR giữ đúng vai trò của nó: chứng minh sức mạnh **Nhận thức Ngữ cảnh Toàn cục**.
 
 ```python
-    batch=2,            
-    accumulate=4,       
+    batch=4,            # Tăng batch vì ảnh nhỏ lại
 ```
-- **Ý nghĩa Kỹ thuật Chống Tràn RAM (Gradient Accumulation)**: Đây là một thủ thuật "ma thuật" trong Deep Learning.
-  - Tại sao lại dùng `batch=2`? Vì ma trận tính toán Attention của kiến trúc Transformer tăng lên theo cấp số nhân $O(N^2)$ đối với kích thước ảnh. Với ảnh 1280px, một card T4 (16GB VRAM) của Colab sẽ ngay lập tức văng lỗi **CUDA Out Of Memory (OOM)** nếu nhồi batch size = 8. Mức tối đa nó chịu đựng được chỉ là 2 tấm ảnh cùng lúc.
-  - Tại sao lại thêm `accumulate=4`? Nếu train với `batch=2`, đạo hàm (Gradient) sẽ cực kỳ nhiễu (Noisy), đồ thị Loss sẽ giật cục và mạng không thể hội tụ. Lệnh `accumulate=4` ra lệnh cho PyTorch: *"Chạy 2 ảnh, tính đạo hàm nhưng ĐỪNG CẬP NHẬT TRỌNG SỐ (optimizer.step) vội. Hãy cộng dồn đạo hàm lại. Lặp lại 4 lần như vậy rồi mới cập nhật 1 lần"*. 
-  - **Kết quả**: Batch ảo (Virtual Batch Size) = `2 x 4 = 8`. Hệ thống lách luật thành công: Vừa không bị tràn RAM, vừa giữ nguyên được kích thước Batch chuẩn là 8 giúp đạo hàm mượt mà, ổn định.
+- **Ý nghĩa Kỹ thuật (Vì sao bỏ được Gradient Accumulation)**: Kế hoạch cũ ở mức `1280` buộc phải ép `batch=2` rồi bù lại bằng `accumulate=4` để tạo ra "batch ảo" bằng 8 (cộng dồn đạo hàm 4 chu kỳ mới cập nhật trọng số 1 lần).
+  - Sau khi hạ xuống `640`, bộ nhớ Attention giảm 16 lần nên GPU thừa sức nạp thẳng nhiều ảnh thật cùng lúc. Notebook Colab dùng `batch=4`, còn bản Kaggle (`train_rtdetr_Kaggle.ipynb`) đẩy lên `batch=8` nhờ chạy song song 2 GPU T4 (`device=[0, 1]`).
+  - **Kết quả**: Batch thật luôn tốt hơn batch ảo — thống kê BatchNorm chuẩn hơn, code cũng gọn hơn vì bỏ được một tham số dễ gây lỗi API.
 
 ```python
     optimizer='AdamW',
     cos_lr=True,
-    project=save_dir, 
-    name='rtdetr_highres',
+    project='/content/drive/MyDrive/DoAn_NhanDienBienBao/zalo_traffic',
+    name='rtdetr_colab_highres',
 ```
 - **Ý nghĩa**: 
   - `AdamW`: Khác với SGD dùng cho Faster R-CNN, mô hình Transformer cực kỳ nhạy cảm với việc tinh chỉnh Learning Rate và hiện tượng bùng nổ trọng số. Thuật toán `AdamW` (Adam với Weight Decay) là tiêu chuẩn vàng của ngành công nghiệp dành cho Transformer.
@@ -99,7 +100,7 @@ from sahi import AutoDetectionModel
 ...
     detection_model = AutoDetectionModel.from_pretrained(
         model_type='yolov8',  # SAHI gọi RT-DETR qua type yolov8
-        model_path='/content/drive/MyDrive/DoAn_NhanDienBienBao/rtdetr_highres/weights/best.pt',
+        model_path='/content/drive/MyDrive/DoAn_NhanDienBienBao/zalo_traffic/rtdetr_colab_highres/weights/best.pt',
 ...
 ```
 - **Ý nghĩa MLOps**: Chuẩn bị sẵn sàng cho quá trình Deploy (Triển khai lên Web). Trong ứng dụng thực tế (Camera giao thông), ảnh có thể là 4K. Kỹ thuật **SAHI (Slicing Aided Hyper Inference)** giúp băm tấm ảnh 4K ra làm nhiều mảnh nhỏ (ví dụ 4 mảnh 1080p), cho RT-DETR dự đoán trên từng mảnh, rồi tự động nối (Merge) các Bounding Box lại với nhau. Điều thú vị là thư viện SAHI đóng gói API chung cho RT-DETR qua khai báo `model_type='yolov8'`.
@@ -112,8 +113,8 @@ from sahi import AutoDetectionModel
 |---|---|---|---|
 | Phân loại kiến trúc | `RTDETR('rtdetr-l.pt')` | Transformer (Self-Attention) Large | ✅ Khớp |
 | Chia Dữ liệu | `random.shuffle` (80% Train / 20% Val) | 80% Train / 20% Val | ✅ Khớp |
-| Kích thước ảnh (Resolution)| `imgsz=1280` | Giữ độ phân giải cao cho vật siêu nhỏ| ✅ Khớp |
-| Tối ưu hóa bộ nhớ (VRAM) | `batch=2`, `accumulate=4` | Kỹ thuật Gradient Accumulation | ✅ Xuất sắc |
+| Kích thước ảnh (Resolution)| `imgsz=640` | `640 x 640` (hạ từ 1280 để chống OOM) | ✅ Khớp |
+| Tối ưu hóa bộ nhớ (VRAM) | `batch=4` (Colab) / `batch=8` (Kaggle) | Batch thật, bỏ Gradient Accumulation | ✅ Khớp |
 | Thuật toán Tối ưu | `optimizer='AdamW'` | AdamW (Chuẩn công nghiệp cho Transformer)| ✅ Khớp |
 | Hạ nhiệt độ LR | `cos_lr=True` | Cosine Annealing | ✅ Khớp |
 | Triển khai (Deploy) | Gọi thư viện `sahi` | Slicing Aided Hyper Inference | ✅ Khớp |

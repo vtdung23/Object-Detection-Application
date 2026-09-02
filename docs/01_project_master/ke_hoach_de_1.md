@@ -169,5 +169,5 @@ Traffic-Sign-Detection-ZaloAI/
 - **Kiến trúc:** Nhóm quyết định sử dụng **RT-DETR** (Real-Time DETR) thay cho DETR truyền thống. Sự thay đổi này mang tính chiến lược vì RT-DETR khắc phục điểm yếu chí mạng của Transformer là "tốc độ chậm", giúp mô hình có thể đạt Real-time như YOLO nhưng mang trong mình sự chính xác của Transformer.
 - **Quy trình chi tiết trong file Notebook:**
   1. **Khối 1 (Chuẩn bị):** Tái sử dụng lại toàn bộ cấu trúc folder YOLO (images, labels) đã được tạo ra từ file `train_yolov8.ipynb`. (Bởi vì RT-DETR của Ultralytics hỗ trợ đọc chung format với YOLO).
-  2. **Khối 2 (Huấn luyện):** Load mô hình `rtdetr-l.pt` (bản Large). Gọi hàm `model.train()` với `imgsz=1280` và `epochs=50`.
+  2. **Khối 2 (Huấn luyện):** Load mô hình `rtdetr-l.pt` (bản Large). Gọi hàm `model.train()` với `imgsz=640` và `epochs=50`. (Lưu ý: RT-DETR **không** dùng chung `imgsz=1280` với YOLOv8. Ma trận Self-Attention tăng theo $O(N^2)$ nên ảnh 1280 gây tràn VRAM và kéo dài thời gian train tới ~15 tiếng/lượt, vượt hạn mức GPU của Kaggle).
 - **Lưu ý:** Việc sử dụng chung thư viện `ultralytics` cho 2 mô hình (YOLO và RT-DETR) là một điểm sáng, giúp đơn giản hóa pipeline tiền xử lý, tránh viết code rườm rà dễ sinh lỗi.
