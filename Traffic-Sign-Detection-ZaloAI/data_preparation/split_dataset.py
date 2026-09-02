@@ -160,10 +160,20 @@ def chia_ba_tap(danh_sach_id):
 def chuyen_bbox_coco_sang_yolo(bbox, chieu_rong, chieu_cao):
     """COCO [x_min, y_min, w, h] tinh bang pixel -> YOLO [xc, yc, w, h] chuan hoa 0-1."""
     x_min, y_min, w, h = bbox
+    
+    # [FIX] Kiem tra neu bbox co kich thuoc <= 0 thi loai bo de tranh loi NaN (dac biet voi GIoU cua RT-DETR)
+    if w <= 0 or h <= 0:
+        return None
+        
     x_tam = (x_min + w / 2) / chieu_rong
     y_tam = (y_min + h / 2) / chieu_cao
     w_chuan = w / chieu_rong
     h_chuan = h / chieu_cao
+    
+    # [FIX] Kiem tra toa do hop le (trong khoang 0-1) tranh cac box vuot ra khoi mep anh
+    if not (0 <= x_tam <= 1 and 0 <= y_tam <= 1 and 0 < w_chuan <= 1 and 0 < h_chuan <= 1):
+        return None
+        
     return x_tam, y_tam, w_chuan, h_chuan
 
 
@@ -194,9 +204,15 @@ def ghi_mot_tap(danh_sach_id, thu_muc_dich, thong_tin_anh, bbox_theo_anh, thu_mu
             for ann in bbox_theo_anh.get(img_id, []):
                 # JSON goc danh so lop tu 1 den 7, YOLO can 0 den 6 nen phai tru 1
                 class_id = int(ann['category_id']) - 1
-                x_tam, y_tam, w_chuan, h_chuan = chuyen_bbox_coco_sang_yolo(
+                ket_qua_bbox = chuyen_bbox_coco_sang_yolo(
                     ann['bbox'], thong_tin['width'], thong_tin['height']
                 )
+                
+                # Bo qua cac bbox bi loi de bao ve mo hinh (tranh NaN)
+                if ket_qua_bbox is None:
+                    continue
+                    
+                x_tam, y_tam, w_chuan, h_chuan = ket_qua_bbox
                 f_nhan.write(f"{class_id} {x_tam:.6f} {y_tam:.6f} {w_chuan:.6f} {h_chuan:.6f}\n")
                 so_bbox_ghi += 1
 
