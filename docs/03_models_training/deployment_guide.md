@@ -89,15 +89,29 @@ faster_rcnn_v3_results.zip
 
 ## PHẦN 2: THIẾT LẬP GOOGLE COLAB (RT-DETR)
 
-### Bước 2.1: Chuẩn bị `kaggle.json`
+### Bước 2.1: Chuẩn bị thông tin đăng nhập Kaggle
 
 Colab không có sẵn dataset như Kaggle, phải tải về qua Kaggle API.
 
-1. Vào Kaggle $\rightarrow$ ảnh đại diện $\rightarrow$ **Settings** $\rightarrow$ mục **API** $\rightarrow$ **Create New Token**. Trình duyệt tải xuống file `kaggle.json`.
-2. Mở [colab.research.google.com](https://colab.research.google.com) $\rightarrow$ **File** $\rightarrow$ **Upload notebook** $\rightarrow$ chọn `train_rtdetr_v3.ipynb`.
-3. Trong Colab, mở biểu tượng **thư mục** ở thanh trái $\rightarrow$ bấm nút **Upload** $\rightarrow$ chọn file `kaggle.json` vừa tải.
+Kaggle đã đổi cơ chế xác thực: khi bấm tạo token ở `kaggle.com/settings/api`, trang web **không còn tự tải file `kaggle.json`** nữa mà hiện một hộp thoại chứa **một chuỗi ký tự bắt đầu bằng `KGAT_`**. Đó chính là token, chỉ hiện đúng một lần, đóng hộp thoại là không xem lại được.
 
-> **Cảnh báo bảo mật:** `kaggle.json` chứa API key cá nhân của bạn. Tuyệt đối không commit file này lên GitHub. Repo đã có `.gitignore`, nhưng vẫn nên kiểm tra lại bằng `git status` trước khi commit.
+Có hai cách dùng, notebook `train_rtdetr_v3.ipynb` hỗ trợ cả hai:
+
+**Cách 1 (khuyến dùng) — token mới qua Colab Secrets**
+
+1. Vào [kaggle.com/settings/api](https://www.kaggle.com/settings/api), bấm nút tạo API token, copy chuỗi `KGAT_...`.
+2. Mở [colab.research.google.com](https://colab.research.google.com) $\rightarrow$ **File** $\rightarrow$ **Upload notebook** $\rightarrow$ chọn `train_rtdetr_v3.ipynb`.
+3. Trong Colab, bấm biểu tượng **chìa khóa** (Secrets) ở thanh công cụ bên trái $\rightarrow$ **Add new secret**.
+4. Điền **Name** = `KAGGLE_API_TOKEN`, **Value** = chuỗi vừa copy, rồi bật công tắc **Notebook access**.
+
+Cell 2 của notebook sẽ tự đọc secret này và ghi ra `~/.kaggle/access_token`. Cách này an toàn hơn hẳn vì token nằm trong kho bí mật của tài khoản Google, không bị lưu vào file notebook.
+
+**Cách 2 — vẫn muốn dùng file `kaggle.json` như cũ**
+
+1. Vào [kaggle.com/settings/api](https://www.kaggle.com/settings/api), kéo xuống mục **Legacy API Credentials**, bấm **Create Legacy API Key**. Lúc này trình duyệt mới tải file `kaggle.json` về.
+2. Trong Colab, mở biểu tượng **thư mục** ở thanh trái $\rightarrow$ bấm **Upload** $\rightarrow$ chọn file `kaggle.json` vừa tải.
+
+> **Cảnh báo bảo mật:** cả chuỗi `KGAT_...` lẫn file `kaggle.json` đều là chìa khóa vào tài khoản Kaggle của bạn. Đừng dán thẳng token vào ô code rồi chụp màn hình hay commit lên GitHub — ai đọc được là dùng được. Lỡ để lộ thì quay lại trang settings thu hồi (revoke) token cũ và tạo cái mới. Repo đã có `.gitignore` chặn `kaggle.json`, nhưng vẫn nên kiểm tra lại bằng `git status` trước khi commit.
 
 ### Bước 2.2: Bật GPU
 
@@ -193,7 +207,7 @@ Con số này trả lời một câu hỏi hay cho phần phân tích: **mô hì
 
 **Colab:**
 
-- [ ] Đã upload `kaggle.json` vào thư mục làm việc.
+- [ ] Đã khai báo secret `KAGGLE_API_TOKEN` (hoặc upload `kaggle.json` nếu dùng legacy key).
 - [ ] Runtime type = `T4 GPU`, đã chạy `!nvidia-smi` xác nhận.
 - [ ] Đã mount Drive thành công và thấy thư mục `DoAn_NhanDienBienBao`.
 

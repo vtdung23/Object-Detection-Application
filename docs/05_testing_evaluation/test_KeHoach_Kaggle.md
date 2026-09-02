@@ -114,14 +114,15 @@ Mở PowerShell tại thư mục vừa tạo:
 # Cài công cụ dòng lệnh của Kaggle
 pip install kaggle
 
-# Đặt file kaggle.json (tải từ Kaggle > Settings > API > Create New Token) vào đúng chỗ
-mkdir "$env:USERPROFILE\.kaggle" -Force
-copy "$env:USERPROFILE\Downloads\kaggle.json" "$env:USERPROFILE\.kaggle\kaggle.json"
+# Đăng nhập qua trình duyệt, CLI tự lưu thông tin xác thực
+kaggle auth login
 
 # Sinh ra file mô tả dataset
 cd "D:\zalo_traffic_3_models"
 kaggle datasets init -p .
 ```
+
+> **Về việc xác thực:** Kaggle đã bỏ cơ chế tự tải `kaggle.json` khi tạo token. Bây giờ trang `kaggle.com/settings/api` chỉ hiện ra một chuỗi `KGAT_...` (chỉ hiện một lần duy nhất). Nếu `kaggle auth login` không chạy được trên bản `kaggle` đang cài, có hai cách thay thế: đặt biến môi trường `KAGGLE_API_TOKEN` bằng chuỗi đó, hoặc kéo xuống mục **Legacy API Credentials** trên cùng trang, bấm **Create Legacy API Key** để tải file `kaggle.json` như kiểu cũ rồi chép vào `%USERPROFILE%\.kaggle\`.
 
 Lệnh trên tạo file `dataset-metadata.json`. Mở nó ra và sửa lại (thay `your-username` bằng username Kaggle của bạn):
 
