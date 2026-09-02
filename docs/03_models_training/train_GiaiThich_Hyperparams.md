@@ -45,6 +45,14 @@ Tài liệu được thiết kế làm "Cẩm nang bảo vệ đồ án". Dùng 
 - **Nhánh P2 Layer (`yolov8s-p2.yaml`):**
   Mạng YOLO tiêu chuẩn thường có các màng lọc trích xuất đặc trưng (Feature extraction) ở tầng P3, P4, P5. Tầng càng sâu, ảnh càng bị bóp nhỏ, vật thể bé sẽ bốc hơi. Mở khóa thêm nhánh P2 Layer (tầng cạn nhất, độ phân giải cao nhất) là mũi nhọn tối thượng để YOLO nhìn thấy những biển báo siêu li ti.
 - **Bộ 3 Tham số Hàm Loss tối thượng (`fl_gamma=2.0`, `cls=2.0`, `box=1.0`):**
+
+  > ⚠️ **ĐÍNH CHÍNH (V3) — phần viết về `fl_gamma` ngay bên dưới là SAI, không được trích vào báo cáo.**
+  >
+  > Khi triển khai thực tế đã phát hiện: `fl_gamma` là khóa cấu hình thừa kế từ YOLOv5, và lớp `v8DetectionLoss` của YOLOv8 **không hề đọc tới nó** — nhánh phân loại dùng thuần `BCEWithLogitsLoss`. Nói cách khác, **Focal Loss chưa từng được kích hoạt** dù mã nguồn có truyền `fl_gamma=2.0`. Các bản Ultralytics gần đây đã xóa hẳn khóa này, truyền vào sẽ báo `SyntaxError: 'fl_gamma' is not a valid YOLO argument`.
+  >
+  > Cách hiểu đúng: $L_{cls}$ của YOLOv8 là **BCE**, và toàn bộ tác dụng "ưu tiên sửa lỗi phân loại" đến từ **một mình hệ số `cls=2.0`** (gấp đôi `box=1.0`) chứ không phải từ Focal Loss. Lập luận ở *Bước 2* và *Bước 3* bên dưới vẫn đúng về phần hệ số nhân đôi, chỉ cần bỏ đi mọi câu chữ nói rằng Focal Loss "chỉ giữ lại mẫu khó".
+  >
+  > Xem giải thích đầy đủ tại `models_specs.md` mục 1.4.
   - Cả 3 tham số này **hoạt động ĐỒNG THỜI** và lồng ghép trực tiếp vào nhau. Kiến trúc YOLOv8 có hàm mất mát tổng (Total Loss) là sự kết hợp tuyến tính: $Loss_{total} = \lambda_{box} \cdot L_{box} + \lambda_{cls} \cdot L_{cls} + \lambda_{dfl} \cdot L_{dfl}$.
   - *Bước 1 (Tính toán Loss Đồng thời):* Bình thường $L_{cls}$ dùng Binary Cross Entropy (BCE). Nhưng khi bật `fl_gamma=2.0`, BCE bị vứt bỏ và thay thế bằng công thức Focal Loss: $FL(p_t) = -\alpha_t (1 - p_t)^\gamma \log(p_t)$. Focal Loss sẽ "bóp nghẹt" (đưa về 0) điểm sai số của những biển báo to/dễ, và giữ nguyên điểm sai số của những biển báo mờ/khó. Sau đó, kết quả Focal Loss này tiếp tục được nhân với hệ số $\lambda_{cls} = 2.0$, còn $L_{box}$ chỉ được nhân với $\lambda_{box} = 1.0$. Công thức cuối cùng trở thành: **$Loss_{total} = 1.0 \cdot L_{box} + 2.0 \cdot FocalLoss + ...$**
   - *Bước 2 (Lan truyền ngược - Backpropagation):* PyTorch sẽ tính đạo hàm (Gradient) của $Loss_{total}$ truyền ngược về các nơ-ron. Vì thành phần phân loại (Focal Loss) vừa được nhân 2 (`cls=2.0`), vừa chỉ giữ lại mẫu khó (`fl_gamma=2.0`), nên dòng thác Gradient dội về từ nhánh Phân loại (Classification Head) sẽ **to và mạnh gấp đôi** so với nhánh Vẽ khung (Box Head), đồng thời nó mang theo 100% thông tin của các "Biển báo khó".

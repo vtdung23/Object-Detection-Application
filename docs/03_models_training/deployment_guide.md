@@ -12,8 +12,8 @@ Tài liệu này hướng dẫn cách chia 3 mô hình ra chạy **đồng thờ
 
 | Mô hình | Notebook V3 | Nền tảng | GPU | Lý do phân công |
 |---|---|---|---|---|
-| **YOLOv8s-P2** | `train_yolov8_v3.ipynb` | **Kaggle** | P100 | Chạy `imgsz=1280` nên rất ngốn VRAM. Kaggle cấp 30 giờ GPU/tuần với thời hạn 12 giờ liên tục mỗi phiên — dư sức nuốt 100 epoch ảnh độ phân giải cao |
-| **Faster R-CNN** | `train_faster_rcnn_v3.ipynb` | **Kaggle** | P100 hoặc T4 | Kiến trúc Two-stage nặng, lại cần đo mAP sau mỗi epoch. Cùng nằm trên Kaggle để dùng chung `/kaggle/input/` đã mount sẵn dataset, không tốn thời gian tải lại |
+| **YOLOv8s-P2** | `train_yolov8_v3.ipynb` | **Kaggle** | T4 x2 | Chạy `imgsz=1280` nên rất ngốn VRAM. Kaggle cấp 30 giờ GPU/tuần với thời hạn 12 giờ liên tục mỗi phiên — dư sức nuốt 100 epoch ảnh độ phân giải cao |
+| **Faster R-CNN** | `train_faster_rcnn_v3.ipynb` | **Kaggle** | T4 x2 | Kiến trúc Two-stage nặng, lại cần đo mAP sau mỗi epoch. Cùng nằm trên Kaggle để dùng chung `/kaggle/input/` đã mount sẵn dataset, không tốn thời gian tải lại |
 | **RT-DETR-L** | `train_rtdetr_v3.ipynb` | **Google Colab** | T4 | Chạy `imgsz=640` nên nhẹ nhất trong ba mô hình, hợp với hạn mức khắt khe của Colab. Đẩy sang Colab để giải phóng slot Kaggle cho hai mô hình nặng |
 
 ### 0.2. Vì sao chia như vậy?
@@ -43,12 +43,16 @@ Mục **Settings** ở thanh bên phải:
 
 | Mục | Giá trị | Ghi chú |
 |---|---|---|
-| **Accelerator** | `GPU P100` | P100 có 16GB VRAM, mạnh hơn một GPU T4 đơn lẻ cho tác vụ train |
+| **Accelerator** | `GPU T4 x2` | **Không chọn `P100`** — xem giải thích ngay dưới bảng |
 | **Internet** | `On` | Bắt buộc — cần tải `split_dataset.py` từ GitHub, trọng số pretrained và thư viện `torchmetrics` |
 | **Persistence** | `Files only` | Giữ lại file output giữa các lần chạy |
 | **Environment** | `Always use latest` | Đảm bảo `ultralytics` đủ mới |
 
-> **Về lựa chọn `T4 x2`:** Ultralytics hỗ trợ chạy 2 GPU bằng `device=[0, 1]`, nhưng với dataset chỉ ~4500 ảnh thì chi phí đồng bộ giữa hai GPU thường ăn hết phần lợi. Cứ để `P100` cho đơn giản và dễ giải thích số liệu.
+> **Bắt buộc chọn `T4 x2`, không được chọn `P100`.** Bản PyTorch trong image Kaggle hiện tại được biên dịch với CUDA 12.8, mà từ CUDA 12.8 trở đi PyTorch đã bỏ hỗ trợ kiến trúc Pascal. P100 là Pascal `sm_60` nên mọi phép tính trên GPU đều ném lỗi `CUDA error: no kernel image is available for execution on the device`. T4 là Turing `sm_75` nên chạy bình thường, lại có Tensor Core nên train ở chế độ AMP còn nhanh hơn P100.
+>
+> Chọn `T4 x2` không có nghĩa là phải dùng cả hai GPU. Cả ba notebook đều khóa cứng `cuda:0`, tức chỉ dùng một card. Với dataset chỉ khoảng 4500 ảnh thì chi phí đồng bộ giữa hai GPU thường ăn hết phần lợi, mà số liệu tốc độ một GPU cũng dễ giải thích trước hội đồng hơn.
+>
+> Cell đầu tiên của notebook YOLOv8 và Faster R-CNN đều có đoạn chạy thử một phép tính nhỏ trên GPU. Nếu lỡ chọn nhầm P100, notebook dừng ngay ở cell đầu kèm hướng dẫn, thay vì chạy phí mấy chục phút rồi mới chết giữa vòng lặp train.
 
 ### Bước 1.3: Nạp notebook và chạy
 
@@ -60,7 +64,19 @@ Mục **Settings** ở thanh bên phải:
 
 Đây là mẹo quan trọng nhất khi train dài trên Kaggle. Nếu chỉ bấm **Run All** rồi để tab trình duyệt mở, phiên sẽ chết ngay khi máy bạn mất mạng hoặc sập nguồn.
 
-Thay vào đó: bấm **Save Version** $\rightarrow$ chọn **Save & Run All (Commit)**. Kaggle sẽ chạy notebook trên máy chủ của họ hoàn toàn độc lập với trình duyệt của bạn. Tắt máy đi ngủ vẫn không sao, sáng mai vào xem kết quả.
+Thay vào đó: bấm nút **Save Version** ở **góc trên bên phải màn hình** (nút màu tối, cạnh nút **Share**) $\rightarrow$ chọn **Save & Run All (Commit)**. Kaggle sẽ chạy notebook trên máy chủ của họ hoàn toàn độc lập với trình duyệt của bạn. Tắt máy đi ngủ vẫn không sao, sáng mai vào xem kết quả.
+
+> ### ⚠️ Có HAI nút "Save" trên màn hình Kaggle — đừng bấm nhầm
+>
+> Kéo thanh bên phải xuống dưới cùng, bạn sẽ thấy mục **"Schedule a notebook to run"** cũng có một nút **Save**. **Đó không phải nút cần bấm.** Nút đó dùng để hẹn giờ chạy notebook vào một thời điểm trong tương lai.
+>
+> Nếu lỡ bấm, Kaggle sẽ hiện hộp thoại:
+>
+> > **GPU notebook** — *Scheduled notebooks cannot use GPU. Turn off GPU to save your scheduled notebook.*
+>
+> Nghĩa là notebook hẹn giờ **không được phép dùng GPU**. Hãy bấm **Cancel**, tuyệt đối không bấm **Turn off GPU** — tắt GPU thì 100 epoch sẽ chạy bằng CPU và mất tới hàng chục giờ, gần như chắc chắn không train nổi.
+>
+> Nút đúng nằm ở **góc trên bên phải**, ghi là `Save Version` kèm số phiên bản bên cạnh.
 
 > **Giới hạn cần nhớ:** mỗi phiên Commit tối đa **12 giờ**. Nếu 100 epoch của YOLOv8 ở `imgsz=1280` có nguy cơ vượt mốc này, hãy hạ `imgsz` xuống `960` hoặc giảm trần `epochs` — và nhớ cập nhật lại `models_specs.md` cho khớp.
 
@@ -77,15 +93,29 @@ faster_rcnn_v3_results.zip
 
 ## PHẦN 2: THIẾT LẬP GOOGLE COLAB (RT-DETR)
 
-### Bước 2.1: Chuẩn bị `kaggle.json`
+### Bước 2.1: Chuẩn bị thông tin đăng nhập Kaggle
 
 Colab không có sẵn dataset như Kaggle, phải tải về qua Kaggle API.
 
-1. Vào Kaggle $\rightarrow$ ảnh đại diện $\rightarrow$ **Settings** $\rightarrow$ mục **API** $\rightarrow$ **Create New Token**. Trình duyệt tải xuống file `kaggle.json`.
-2. Mở [colab.research.google.com](https://colab.research.google.com) $\rightarrow$ **File** $\rightarrow$ **Upload notebook** $\rightarrow$ chọn `train_rtdetr_v3.ipynb`.
-3. Trong Colab, mở biểu tượng **thư mục** ở thanh trái $\rightarrow$ bấm nút **Upload** $\rightarrow$ chọn file `kaggle.json` vừa tải.
+Kaggle đã đổi cơ chế xác thực: khi bấm tạo token ở `kaggle.com/settings/api`, trang web **không còn tự tải file `kaggle.json`** nữa mà hiện một hộp thoại chứa **một chuỗi ký tự bắt đầu bằng `KGAT_`**. Đó chính là token, chỉ hiện đúng một lần, đóng hộp thoại là không xem lại được.
 
-> **Cảnh báo bảo mật:** `kaggle.json` chứa API key cá nhân của bạn. Tuyệt đối không commit file này lên GitHub. Repo đã có `.gitignore`, nhưng vẫn nên kiểm tra lại bằng `git status` trước khi commit.
+Có hai cách dùng, notebook `train_rtdetr_v3.ipynb` hỗ trợ cả hai:
+
+**Cách 1 (khuyến dùng) — token mới qua Colab Secrets**
+
+1. Vào [kaggle.com/settings/api](https://www.kaggle.com/settings/api), bấm nút tạo API token, copy chuỗi `KGAT_...`.
+2. Mở [colab.research.google.com](https://colab.research.google.com) $\rightarrow$ **File** $\rightarrow$ **Upload notebook** $\rightarrow$ chọn `train_rtdetr_v3.ipynb`.
+3. Trong Colab, bấm biểu tượng **chìa khóa** (Secrets) ở thanh công cụ bên trái $\rightarrow$ **Add new secret**.
+4. Điền **Name** = `KAGGLE_API_TOKEN`, **Value** = chuỗi vừa copy, rồi bật công tắc **Notebook access**.
+
+Cell 2 của notebook sẽ tự đọc secret này và ghi ra `~/.kaggle/access_token`. Cách này an toàn hơn hẳn vì token nằm trong kho bí mật của tài khoản Google, không bị lưu vào file notebook.
+
+**Cách 2 — vẫn muốn dùng file `kaggle.json` như cũ**
+
+1. Vào [kaggle.com/settings/api](https://www.kaggle.com/settings/api), kéo xuống mục **Legacy API Credentials**, bấm **Create Legacy API Key**. Lúc này trình duyệt mới tải file `kaggle.json` về.
+2. Trong Colab, mở biểu tượng **thư mục** ở thanh trái $\rightarrow$ bấm **Upload** $\rightarrow$ chọn file `kaggle.json` vừa tải.
+
+> **Cảnh báo bảo mật:** cả chuỗi `KGAT_...` lẫn file `kaggle.json` đều là chìa khóa vào tài khoản Kaggle của bạn. Đừng dán thẳng token vào ô code rồi chụp màn hình hay commit lên GitHub — ai đọc được là dùng được. Lỡ để lộ thì quay lại trang settings thu hồi (revoke) token cũ và tạo cái mới. Repo đã có `.gitignore` chặn `kaggle.json`, nhưng vẫn nên kiểm tra lại bằng `git status` trước khi commit.
 
 ### Bước 2.2: Bật GPU
 
@@ -175,13 +205,13 @@ Con số này trả lời một câu hỏi hay cho phần phân tích: **mô hì
 **Kaggle (làm 2 lần, cho 2 notebook):**
 
 - [ ] Đã Add Input dataset `za-traffic-2020`.
-- [ ] Accelerator = `GPU P100`, Internet = `On`.
+- [ ] Accelerator = `GPU T4 x2` (**không phải P100**), Internet = `On`.
 - [ ] Đã bấm **Save Version → Save & Run All (Commit)** thay vì chỉ Run All.
 - [ ] Còn đủ hạn mức GPU trong tuần (kiểm tra ở trang **Settings** của tài khoản).
 
 **Colab:**
 
-- [ ] Đã upload `kaggle.json` vào thư mục làm việc.
+- [ ] Đã khai báo secret `KAGGLE_API_TOKEN` (hoặc upload `kaggle.json` nếu dùng legacy key).
 - [ ] Runtime type = `T4 GPU`, đã chạy `!nvidia-smi` xác nhận.
 - [ ] Đã mount Drive thành công và thấy thư mục `DoAn_NhanDienBienBao`.
 

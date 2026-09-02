@@ -25,7 +25,7 @@ Phần Web App (Dự đoán 1 ảnh tĩnh tải lên) được ưu tiên tối �
 
 ### 🤖 2. Phân bổ cho mô hình YOLOv8
 - **Cấu trúc mạng**: Bật nhánh P2 Layer (`yolov8s-p2.yaml`).
-- **Hàm Loss**: Bật Focal Loss (`fl_gamma=2.0`), cấu hình tăng mạnh `cls_gain=2.0` cao hơn gấp đôi so với `box_gain=1.0`.
+- **Hàm Loss**: Cấu hình tăng mạnh `cls_gain=2.0` cao hơn gấp đôi so với `box_gain=1.0`. *(Cập nhật V3: đã gỡ `fl_gamma=2.0`. Đây là khóa cũ từ YOLOv5 mà `v8DetectionLoss` không hề đọc tới, nay Ultralytics đã xóa hẳn nên truyền vào sẽ lỗi. Xem phần đính chính trong `models_specs.md` mục 1.4.)*
 - **Augmentation**: Kích hoạt Mosaic cường độ cao (`mosaic=1.0`), Random Shift (thông qua `translate=0.2` để trị Center Bias), và bổ sung chiến thuật **Augmentation Độ sáng** bằng `ColorJitter` / `RandomBrightnessContrast` để khắc phục hiện tượng E7: nhiều biển báo bị tối hoặc thiếu sáng nghiêm trọng theo thời tiết và góc chụp.
 - **Siêu tham số Training**: Thiết lập `imgsz=1280`, `max_det=50`, dùng Optimizer `AdamW` + `Cosine Annealing LR` (`cos_lr=True`).
 
