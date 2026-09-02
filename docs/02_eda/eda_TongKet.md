@@ -8,7 +8,9 @@ Tài liệu này là bản báo cáo mang tính học thuật, phân tích sâu 
 
 Dựa trên yêu cầu Đồ án (Xây dựng Web App cho phép upload 1 ảnh để dự đoán, **tức là không yêu cầu Real-time/FPS cao**), hệ thống của chúng ta được phép đánh đổi tốc độ xử lý để tối đa hóa độ chính xác (mAP). Vì vậy, kết hợp toàn bộ các kết quả từ E1 đến E6 và các kỹ thuật nâng cao, dưới đây là danh sách chốt hạ các kỹ thuật **BẮT BUỘC PHẢI DÙNG** (Cốt lõi - Không có là Thất bại) sẽ được áp dụng vào giai đoạn Training:
 
-1. **Focal Loss (E1)**: Bắt buộc bật. Không có nó, class thiểu số như "Cấm Rẽ" sẽ bị phớt lờ, độ chính xác Recall sẽ chạm đáy 0 do mất cân bằng dữ liệu nghiêm trọng.
+1. **Xử lý mất cân bằng lớp (E1)**: Bắt buộc có. Không xử lý thì class thiểu số như "Cấm Rẽ" sẽ bị phớt lờ, độ chính xác Recall sẽ chạm đáy.
+
+   > ⚠️ **Đính chính khi triển khai (V3):** Kế hoạch ban đầu định bật **Focal Loss** cho YOLOv8 qua tham số `fl_gamma=2.0`. Thực tế thư viện Ultralytics không hỗ trợ — `fl_gamma` là khóa cũ từ YOLOv5 mà `v8DetectionLoss` không hề đọc tới, và nay đã bị xóa hẳn. Biện pháp thực sự được dùng là nâng **`cls_gain = 2.0`** (gấp đôi `box_gain`). Chấp nhận được vì chính phần **[E1]** đã đo tỷ lệ mất cân bằng chỉ khoảng **1:5.5** — mức nhẹ. Chi tiết xem `models_specs.md` mục 1.4.
 2. **P2 Layer cho YOLO hoặc K-Means Anchor cho Faster R-CNN (E3, E6)**: Kiến trúc bắt buộc để mô hình học được kích thước vật thể siêu li ti và hình khối vuông 1:1 chuẩn xác của biển báo Việt Nam.
 3. **BBox-Safe Crop & Random Shift (E4)**: Dùng `Albumentations` để cắt ảnh an toàn (min_visibility=0.5) và dịch chuyển ảnh để phá vỡ "định kiến trung tâm" (Center Bias). Cực kỳ quan trọng để máy không tự sinh ra rác dữ liệu làm nhiễu mô hình.
 4. **SAHI (Slicing Aided Hyper Inference) (E3)**: Lên đồ án Object Detection vật thể nhỏ mà thiếu SAHI là một lỗ hổng vô cùng lớn. Vì Web App chỉ cần dự đoán ảnh tĩnh (không phải Real-time), ta có dư thời gian để chạy SAHI cắt nhỏ ảnh giúp mAP vọt lên mà không cần tốn công train lại model.
