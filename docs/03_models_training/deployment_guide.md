@@ -60,7 +60,19 @@ Mục **Settings** ở thanh bên phải:
 
 Đây là mẹo quan trọng nhất khi train dài trên Kaggle. Nếu chỉ bấm **Run All** rồi để tab trình duyệt mở, phiên sẽ chết ngay khi máy bạn mất mạng hoặc sập nguồn.
 
-Thay vào đó: bấm **Save Version** $\rightarrow$ chọn **Save & Run All (Commit)**. Kaggle sẽ chạy notebook trên máy chủ của họ hoàn toàn độc lập với trình duyệt của bạn. Tắt máy đi ngủ vẫn không sao, sáng mai vào xem kết quả.
+Thay vào đó: bấm nút **Save Version** ở **góc trên bên phải màn hình** (nút màu tối, cạnh nút **Share**) $\rightarrow$ chọn **Save & Run All (Commit)**. Kaggle sẽ chạy notebook trên máy chủ của họ hoàn toàn độc lập với trình duyệt của bạn. Tắt máy đi ngủ vẫn không sao, sáng mai vào xem kết quả.
+
+> ### ⚠️ Có HAI nút "Save" trên màn hình Kaggle — đừng bấm nhầm
+>
+> Kéo thanh bên phải xuống dưới cùng, bạn sẽ thấy mục **"Schedule a notebook to run"** cũng có một nút **Save**. **Đó không phải nút cần bấm.** Nút đó dùng để hẹn giờ chạy notebook vào một thời điểm trong tương lai.
+>
+> Nếu lỡ bấm, Kaggle sẽ hiện hộp thoại:
+>
+> > **GPU notebook** — *Scheduled notebooks cannot use GPU. Turn off GPU to save your scheduled notebook.*
+>
+> Nghĩa là notebook hẹn giờ **không được phép dùng GPU**. Hãy bấm **Cancel**, tuyệt đối không bấm **Turn off GPU** — tắt GPU thì 100 epoch sẽ chạy bằng CPU và mất tới hàng chục giờ, gần như chắc chắn không train nổi.
+>
+> Nút đúng nằm ở **góc trên bên phải**, ghi là `Save Version` kèm số phiên bản bên cạnh.
 
 > **Giới hạn cần nhớ:** mỗi phiên Commit tối đa **12 giờ**. Nếu 100 epoch của YOLOv8 ở `imgsz=1280` có nguy cơ vượt mốc này, hãy hạ `imgsz` xuống `960` hoặc giảm trần `epochs` — và nhớ cập nhật lại `models_specs.md` cho khớp.
 
