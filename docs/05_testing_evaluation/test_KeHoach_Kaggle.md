@@ -236,7 +236,7 @@ Vào **Settings** ở thanh bên phải:
 
 | Mục | Giá trị cần chọn | Lý do |
 |---|---|---|
-| **Accelerator** | `GPU P100` | **Chọn P100, không chọn T4 x2.** Bài toán đo FPS chạy suy luận từng ảnh một (`batch=1`) nên GPU thứ hai hoàn toàn không giúp tăng tốc, mà còn khiến số liệu khó giải thích. Một GPU duy nhất cho kết quả FPS sạch và dễ bảo vệ trước hội đồng. Nếu hết hạn mức P100 thì chọn `T4 x2` nhưng phải khóa cứng `device='cuda:0'` trong code. |
+| **Accelerator** | `GPU T4 x2` | **Chọn T4 x2, không chọn P100.** Bản PyTorch của image Kaggle hiện tại dùng CUDA 12.8 nên đã bỏ hỗ trợ kiến trúc Pascal `sm_60` của P100 — chọn P100 là gặp lỗi `no kernel image is available for execution on the device`. Chọn `T4 x2` nhưng code phải khóa cứng `device='cuda:0'` để **chỉ dùng một GPU**: bài toán đo FPS chạy suy luận từng ảnh một (`batch=1`) nên GPU thứ hai không giúp tăng tốc, mà còn khiến số liệu khó giải thích trước hội đồng. |
 | **Internet** | `On` | Cần tải thư viện `torchmetrics` và trọng số backbone ResNet-50 của torchvision. |
 | **Persistence** | `Files only` (hoặc để mặc định) | Giữ lại file CSV kết quả giữa các lần chạy cho tiện. |
 | **Environment** | `Always use latest` | Đảm bảo `ultralytics` đủ mới để đọc được file `best.pt`. |
@@ -260,7 +260,7 @@ Có 2 cách đưa `evaluate_3_models.ipynb` lên Kaggle:
 ## PHẦN 4: CHECKLIST TRƯỚC KHI BẤM RUN ALL
 
 - [ ] Đã gắn đủ **2 dataset** vào Input (`za-traffic-2020` và dataset weights của mình).
-- [ ] Accelerator đã bật **GPU P100** (không phải None, không phải CPU).
+- [ ] Accelerator đã bật **GPU T4 x2** (không phải P100, không phải None, không phải CPU).
 - [ ] **Internet = On**.
 - [ ] Cả 3 file weights đều hiện diện trong `/kaggle/input/`, không file nào bị lỗi upload 0 KB.
 - [ ] Cả 3 weights đều là **bản V3** (train bằng notebook trong `notebooks/v3/`). Nếu trộn lẫn weights V2 cũ vào thì bảng so sánh mất giá trị, vì model V2 đã học trên tập dữ liệu khác.

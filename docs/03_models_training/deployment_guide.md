@@ -12,8 +12,8 @@ Tài liệu này hướng dẫn cách chia 3 mô hình ra chạy **đồng thờ
 
 | Mô hình | Notebook V3 | Nền tảng | GPU | Lý do phân công |
 |---|---|---|---|---|
-| **YOLOv8s-P2** | `train_yolov8_v3.ipynb` | **Kaggle** | P100 | Chạy `imgsz=1280` nên rất ngốn VRAM. Kaggle cấp 30 giờ GPU/tuần với thời hạn 12 giờ liên tục mỗi phiên — dư sức nuốt 100 epoch ảnh độ phân giải cao |
-| **Faster R-CNN** | `train_faster_rcnn_v3.ipynb` | **Kaggle** | P100 hoặc T4 | Kiến trúc Two-stage nặng, lại cần đo mAP sau mỗi epoch. Cùng nằm trên Kaggle để dùng chung `/kaggle/input/` đã mount sẵn dataset, không tốn thời gian tải lại |
+| **YOLOv8s-P2** | `train_yolov8_v3.ipynb` | **Kaggle** | T4 x2 | Chạy `imgsz=1280` nên rất ngốn VRAM. Kaggle cấp 30 giờ GPU/tuần với thời hạn 12 giờ liên tục mỗi phiên — dư sức nuốt 100 epoch ảnh độ phân giải cao |
+| **Faster R-CNN** | `train_faster_rcnn_v3.ipynb` | **Kaggle** | T4 x2 | Kiến trúc Two-stage nặng, lại cần đo mAP sau mỗi epoch. Cùng nằm trên Kaggle để dùng chung `/kaggle/input/` đã mount sẵn dataset, không tốn thời gian tải lại |
 | **RT-DETR-L** | `train_rtdetr_v3.ipynb` | **Google Colab** | T4 | Chạy `imgsz=640` nên nhẹ nhất trong ba mô hình, hợp với hạn mức khắt khe của Colab. Đẩy sang Colab để giải phóng slot Kaggle cho hai mô hình nặng |
 
 ### 0.2. Vì sao chia như vậy?
@@ -43,12 +43,16 @@ Mục **Settings** ở thanh bên phải:
 
 | Mục | Giá trị | Ghi chú |
 |---|---|---|
-| **Accelerator** | `GPU P100` | P100 có 16GB VRAM, mạnh hơn một GPU T4 đơn lẻ cho tác vụ train |
+| **Accelerator** | `GPU T4 x2` | **Không chọn `P100`** — xem giải thích ngay dưới bảng |
 | **Internet** | `On` | Bắt buộc — cần tải `split_dataset.py` từ GitHub, trọng số pretrained và thư viện `torchmetrics` |
 | **Persistence** | `Files only` | Giữ lại file output giữa các lần chạy |
 | **Environment** | `Always use latest` | Đảm bảo `ultralytics` đủ mới |
 
-> **Về lựa chọn `T4 x2`:** Ultralytics hỗ trợ chạy 2 GPU bằng `device=[0, 1]`, nhưng với dataset chỉ ~4500 ảnh thì chi phí đồng bộ giữa hai GPU thường ăn hết phần lợi. Cứ để `P100` cho đơn giản và dễ giải thích số liệu.
+> **Bắt buộc chọn `T4 x2`, không được chọn `P100`.** Bản PyTorch trong image Kaggle hiện tại được biên dịch với CUDA 12.8, mà từ CUDA 12.8 trở đi PyTorch đã bỏ hỗ trợ kiến trúc Pascal. P100 là Pascal `sm_60` nên mọi phép tính trên GPU đều ném lỗi `CUDA error: no kernel image is available for execution on the device`. T4 là Turing `sm_75` nên chạy bình thường, lại có Tensor Core nên train ở chế độ AMP còn nhanh hơn P100.
+>
+> Chọn `T4 x2` không có nghĩa là phải dùng cả hai GPU. Cả ba notebook đều khóa cứng `cuda:0`, tức chỉ dùng một card. Với dataset chỉ khoảng 4500 ảnh thì chi phí đồng bộ giữa hai GPU thường ăn hết phần lợi, mà số liệu tốc độ một GPU cũng dễ giải thích trước hội đồng hơn.
+>
+> Cell đầu tiên của notebook YOLOv8 và Faster R-CNN đều có đoạn chạy thử một phép tính nhỏ trên GPU. Nếu lỡ chọn nhầm P100, notebook dừng ngay ở cell đầu kèm hướng dẫn, thay vì chạy phí mấy chục phút rồi mới chết giữa vòng lặp train.
 
 ### Bước 1.3: Nạp notebook và chạy
 
@@ -201,7 +205,7 @@ Con số này trả lời một câu hỏi hay cho phần phân tích: **mô hì
 **Kaggle (làm 2 lần, cho 2 notebook):**
 
 - [ ] Đã Add Input dataset `za-traffic-2020`.
-- [ ] Accelerator = `GPU P100`, Internet = `On`.
+- [ ] Accelerator = `GPU T4 x2` (**không phải P100**), Internet = `On`.
 - [ ] Đã bấm **Save Version → Save & Run All (Commit)** thay vì chỉ Run All.
 - [ ] Còn đủ hạn mức GPU trong tuần (kiểm tra ở trang **Settings** của tài khoản).
 
