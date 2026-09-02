@@ -149,7 +149,7 @@ Traffic-Sign-Detection-ZaloAI/
   2. **Khối 2 (Cấu hình Nâng cao - M2.3 & M1.1):** 
      - Sửa file cấu hình `yolov8.yaml` để **kích hoạt P2 Layer** (tăng khả năng bắt vật thể siêu nhỏ). 
      - Code tự động tạo file `dataset.yaml` chứa đường dẫn data.
-  3. **Khối 3 (Huấn luyện):** Cài đặt thư viện `ultralytics`. Dùng lệnh `model.train()` với cấu hình: `epochs=100`, `patience=15` (Early Stopping), `imgsz=1280` (trị vật thể nhỏ), `batch=8`. (Lưu ý gài các tham số phạt class thiểu số để kích hoạt **Focal Loss** xử lý mất cân bằng dữ liệu).
+  3. **Khối 3 (Huấn luyện):** Cài đặt thư viện `ultralytics`. Dùng lệnh `model.train()` với cấu hình: `epochs=100`, `patience=15` (Early Stopping), `imgsz=1280` (trị vật thể nhỏ), `batch=8`. (Xử lý mất cân bằng dữ liệu bằng cách nâng `cls=2.0` gấp đôi `box=1.0`. Không dùng `fl_gamma` nữa — xem đính chính về Focal Loss trong `models_specs.md` mục 1.4).
   5. **Khối 5 (Nhật ký):** Parse file `results.csv` của Ultralytics thành `yolov8_training_history.json` để vẽ Learning Curve.
   4. **Khối 4 (Suy luận - M2.1):** Cài đặt thư viện **SAHI** để tiến hành cắt ảnh trượt đè lấp (Overlapping Sliding Window) lúc dự đoán (Inference), tối đa hóa mAP.
 - **Lưu ý triển khai:** Khối 1 và Khối 2 xử lý việc tạo folder và json ngay trên Kaggle RAM, tránh việc phải upload hàng vạn file txt từ máy cá nhân lên gây lỗi mạng.

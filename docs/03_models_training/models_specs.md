@@ -75,7 +75,11 @@ File JSON này là nguyên liệu để vẽ **Learning Curve** trong báo cáo 
 
 ### 1.4 Cơ chế Hàm độ lỗi (Loss Functions)
 Tổng Loss = $\lambda_1 L_{cls} + \lambda_2 L_{box} + \lambda_3 L_{dfl}$
-- **Classification Loss ($L_{cls}$):** Dùng **BCE (Binary Cross-Entropy)** kết hợp với **Focal Loss** (`fl_gamma=2.0`). Trọng số `cls_gain` được ép lên 2.0 để trừng phạt thật nặng các lỗi nhận diện nhầm biển báo có viền đỏ giống nhau.
+- **Classification Loss ($L_{cls}$):** Dùng **BCE (Binary Cross-Entropy)**. Trọng số `cls_gain` được ép lên 2.0 (gấp đôi `box_gain`) để trừng phạt thật nặng các lỗi nhận diện nhầm biển báo có viền đỏ giống nhau — đây chính là biện pháp chống mất cân bằng dữ liệu của mô hình này.
+
+> **Đính chính quan trọng về Focal Loss (cập nhật V3).** Các phiên bản tài liệu trước ghi rằng YOLOv8 bật Focal Loss thông qua tham số `fl_gamma=2.0`. Điều này **không đúng với thực tế cài đặt của thư viện**. `fl_gamma` là di sản từ file siêu tham số của YOLOv5; Ultralytics có giữ lại tên khóa này một thời gian nhưng lớp `v8DetectionLoss` chưa bao giờ đọc tới nó — nhánh phân loại của YOLOv8 dùng thuần `BCEWithLogitsLoss`. Từ các bản Ultralytics gần đây khóa này đã bị xóa hẳn, truyền vào sẽ báo `SyntaxError: 'fl_gamma' is not a valid YOLO argument`.
+>
+> Hệ quả: kể cả những lần chạy trước đó, Focal Loss cũng **chưa từng được kích hoạt**. Việc gỡ tham số này khỏi mã nguồn V3 do đó **không làm thay đổi kết quả huấn luyện**, chỉ khiến tài liệu phản ánh đúng những gì thực sự chạy. Nhiệm vụ xử lý mất cân bằng dữ liệu được giao hoàn toàn cho `cls_gain=2.0`. Điều này chấp nhận được vì chính phần EDA đã kết luận tỷ lệ mất cân bằng của bộ dữ liệu chỉ khoảng **1:5.5** (Moderate Imbalance), tức mức nhẹ trong Object Detection.
 - **Bounding Box Loss ($L_{box}$):** Sử dụng **CIoU Loss** (Complete IoU). Không chỉ xét diện tích đè lấp, mà còn đo khoảng cách giữa 2 tâm (Center distance) và tỷ lệ khung hình (Aspect Ratio).
 - **Distribution Focal Loss ($L_{dfl}$):** Tối ưu hóa xác suất ranh giới mờ của các hộp (Fuzzy boundaries).
 
@@ -89,9 +93,9 @@ Tổng Loss = $\lambda_1 L_{cls} + \lambda_2 L_{box} + \lambda_3 L_{dfl}$
 1. **Forward Pass (Lan truyền tiến trên GPU):** Bức ảnh 1280x1280 (sau khi Augment) đi qua mạng Backbone (CSPDarknet). Tại nhánh P2 (tầng nông nhất), mạng trích xuất ra một ma trận đặc trưng khổng lồ 320x320 chứa nguyên vẹn điểm ảnh của các biển báo siêu li ti (đã bị thu nhỏ thêm bởi Mosaic). Thông tin này qua cổ chai PANet rồi đẩy ra Head để đưa ra 2 dự đoán: Tọa độ viền hộp và Xác suất phân loại của từng lớp ($p_t$).
 2. **Calculate Loss (Đo lường sai số ĐỒNG THỜI):** 
    - Sai số tọa độ được đo bằng thuật toán **CIoU** ($L_{box}$).
-   - Sai số phân loại được đo bằng **Focal Loss** ($L_{cls}$). Hàm toán học $FL(p_t) = -(1 - p_t)^\gamma \log(p_t)$ được kích hoạt để bóp nghẹt sai số của mẫu dễ và giữ lại sai số của mẫu khó.
-   - Hàm Loss tổng hợp được tính toán ngay lập tức: **$Loss_{total} = 1.0 \cdot L_{box} + 2.0 \cdot L_{cls}$**.
-3. **Backward Pass (Lan truyền ngược):** PyTorch tính đạo hàm (Gradient) từ $Loss_{total}$ truyền ngược về lại mạng Backbone. Nhờ hệ số nhân `cls_gain=2.0` và sự thanh lọc rác của Focal Loss, dòng thác Gradient lúc này mang theo một mệnh lệnh sắt đá duy nhất: *"Chỉ dồn lực sửa lỗi nơ-ron đọc chữ cho các biển báo li ti mờ nhòe, bỏ qua các biển to dễ nhìn"*.
+   - Sai số phân loại được đo bằng **BCE (Binary Cross-Entropy)** ($L_{cls}$), tính độc lập cho từng lớp theo cơ chế đa nhãn của YOLOv8.
+   - Hàm Loss tổng hợp được tính toán ngay lập tức: **$Loss_{total} = 1.0 \cdot L_{box} + 2.0 \cdot L_{cls} + 1.5 \cdot L_{dfl}$**.
+3. **Backward Pass (Lan truyền ngược):** PyTorch tính đạo hàm (Gradient) từ $Loss_{total}$ truyền ngược về lại mạng Backbone. Nhờ hệ số nhân `cls_gain=2.0`, dòng thác Gradient dội về từ nhánh Phân loại mạnh gấp đôi so với nhánh Vẽ khung, mang theo mệnh lệnh: *"Ưu tiên sửa lỗi đọc nhầm loại biển báo hơn là lỗi vẽ lệch vài pixel"*.
 4. **Weight Update (Cập nhật trọng số):** Thuật toán tối ưu **AdamW** tiếp nhận dòng thác Gradient này. Nó dùng thuật toán tự động thích ứng để tinh chỉnh (update) hàng triệu ma trận tham số trong mạng nơ-ron theo đúng hướng dẫn của Gradient. Kết hợp với chiến thuật phanh **Cosine Annealing LR**, AdamW sẽ hạ cánh lướt êm các trọng số này đáp chính xác xuống đáy của hố Loss (Global Minima) mà không bị học vẹt.
 ---
 
