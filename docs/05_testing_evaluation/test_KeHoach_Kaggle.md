@@ -26,24 +26,53 @@ Vì `traffic_public_test/` không có file nhãn, ta **không thể** tính `mAP
 
 $\Rightarrow$ **Kết luận:** Tập Test dùng để chấm điểm bắt buộc phải cắt ra từ 4500 ảnh có nhãn trong `traffic_train/`.
 
-### 0.2. Điều kiện đánh giá của 3 mô hình không hoàn toàn đồng nhất
+### 0.2. Tập Hold-out Test 20% được tách ra và giấu đi từ đầu
 
-Ta tái lập lại đúng phép chia dữ liệu đã dùng lúc huấn luyện (`random.seed(42)`, shuffle, lấy 20% cuối) để làm tập Test. Cả 3 mô hình đều chỉ đọc dữ liệu từ `traffic_train/`, **không mô hình nào đụng tới `traffic_public_test/`**. Vì vậy ở đây **không có Data Leakage** theo nghĩa "học lỏm tập test của cuộc thi" — bản thân tập test đó còn không có nhãn.
+Từ phiên bản **V3** trở đi, tập Test không còn được "tái lập lại từ tập Validation" như trước nữa, mà được cắt ra và giấu đi ngay từ khâu chuẩn bị dữ liệu.
 
-Vấn đề nằm ở chỗ khác và nhẹ hơn: cách chia train/val của 3 mô hình không giống nhau.
+Danh sách ảnh được xáo trộn bằng seed 42, rồi cắt lần lượt theo thứ tự **Test → Val → Train**:
 
-| Mô hình | Cách chia lúc train | Vị thế của mô hình trên tập 20% này |
+| Thứ tự cắt | Tập | Tỷ lệ | Ai được nhìn thấy |
+|---|---|---|---|
+| 1 | **Hold-out Test** | **20% đầu** | **Không mô hình nào.** Chỉ mở ra đúng một lần tại notebook đánh giá |
+| 2 | Validation | 10% tiếp theo | Cả 3 mô hình, chỉ để chọn `best.pt` và kích hoạt Early Stopping |
+| 3 | Train | ~70% còn lại | Cả 3 mô hình, để cập nhật trọng số |
+
+Cắt tập Test ra trước tiên là có chủ đích: nhờ vậy tập Test luôn là 20% đầu của danh sách đã xáo trộn, nên sau này có chỉnh tỷ lệ Train/Val thế nào thì nó vẫn giữ nguyên đúng những bức ảnh cũ — kết quả các lần chạy khác nhau vẫn so sánh được với nhau.
+
+Ba cơ chế bảo đảm tính sạch của tập Hold-out:
+
+1. **Một nguồn chia duy nhất.** Cả 3 notebook V3 đều gọi chung `data_preparation/split_dataset.py` với `random_seed = 42`. Không notebook nào tự viết đoạn chia riêng, nên không thể lệch nhau.
+2. **Thư mục vật lý tách rời.** Tập Test nằm ở `holdout_test/`, hoàn toàn bên ngoài `dataset_train_val/`. File `data.yaml` **không có khóa `test:`** — nếu có, Ultralytics sẽ tự động đánh giá trên đó và làm rò rỉ thông tin vào quá trình chọn mô hình.
+3. **Biên bản đối chiếu.** Script xuất `split_manifest.json` ghi lại danh sách `image_id` của cả 3 tập, kèm bước kiểm tra chéo (`assert`) chắc chắn không có ảnh nào xuất hiện ở hai tập cùng lúc.
+
+> **So với phiên bản cũ:** Bản V1/V2 chia 80/20 cho YOLOv8 và RT-DETR (không hề có tập Test), còn Faster R-CNN chia 90/10 bằng `random_split()` không set seed. Hệ quả là ba mô hình học trên ba tập khác nhau, và tập dùng để chấm điểm chính là tập Validation — tức là tập đã được dùng để chọn `best.pt`. Điểm số vì thế lạc quan hơn thực tế. Bản V3 sinh ra để khắc phục đúng vấn đề này. Chi tiết kỹ thuật ở `models_specs.md` mục 0.1.
+
+### 0.3. Early Stopping và kế hoạch vẽ Learning Curve
+
+Cả 3 mô hình đều đặt trần `epochs = 100` và dừng sớm khi 15 epoch liên tiếp không cải thiện mAP trên tập Validation.
+
+**Vì sao không dùng số epoch cố định?** CNN và Transformer hội tụ với tốc độ rất khác nhau. YOLOv8 bắt nhịp nhanh nhờ có sẵn quy nạp cục bộ về không gian; RT-DETR phải tự học quan hệ không gian từ con số 0 nên chậm hơn hẳn ở giai đoạn đầu. Ép cả ba chạy cứng 50 epoch thì mô hình chậm bị cắt ngang lúc chưa chín, mô hình nhanh thì thừa ra hàng chục epoch chỉ để overfitting. Cho cả ba cùng trần 100 epoch rồi để Early Stopping tự quyết định mới là so sánh công bằng.
+
+**Số epoch thực tế mỗi mô hình dùng cũng là một số liệu đáng đưa vào báo cáo** — nó cho biết mô hình nào "học nhanh" hơn trên bộ dữ liệu này.
+
+Sau khi train, mỗi mô hình sinh ra một file nhật ký JSON:
+
+| Mô hình | File nhật ký | Cách sinh ra |
 |---|---|---|
-| YOLOv8-P2 | `random.seed(42)` + shuffle, cắt 80/20 | Đây đúng là tập **Validation** của nó — chưa từng học trực tiếp, chỉ dùng để chọn `best.pt` |
-| RT-DETR | Cùng đoạn code với YOLOv8 | Trùng khớp hoàn toàn với YOLOv8 |
-| Faster R-CNN | `random_split(...)` cắt 90/10, **không set seed** | ⚠️ Không tái lập được. Về mặt xác suất, khoảng 90% ảnh trong tập 20% này đã nằm trong phần train của nó |
+| YOLOv8s-P2 | `yolov8_training_history.json` | Parse `results.csv` của Ultralytics |
+| RT-DETR-L | `rtdetr_training_history.json` | Parse `results.csv` (dùng chung hàm với YOLOv8) |
+| Faster R-CNN | `faster_rcnn_training_history.json` | Ghi thẳng trong vòng lặp `for epoch`, `json.dump()` sau mỗi epoch |
 
-**Ý nghĩa thực tế:** Đây là hiện tượng **Overfitting** lộ ra chứ không phải gian lận dữ liệu. Faster R-CNN được chấm trên những bức ảnh nó đã học thuộc, còn YOLOv8 và RT-DETR bị chấm trên ảnh hoàn toàn mới. Nên nếu Faster R-CNN có mAP cao bất thường thì đó phần lớn là điểm "học thuộc lòng", không phản ánh khả năng tổng quát hóa.
+Mỗi file chứa mảng theo từng epoch với 5 trường: `epoch_id`, `train_loss`, `val_loss`, `mAP_50`, `mAP_50_95`.
 
-Hai cách xử lý:
+**Kế hoạch dùng Learning Curve trong báo cáo:**
 
-- **Cách nhanh (chấp nhận được cho đồ án):** Cứ chạy đánh giá và **ghi rõ chú thích này** dưới bảng kết quả. Trung thực, tốn ít thời gian, và bản thân việc chỉ ra được chênh lệch điều kiện này cũng là một điểm phân tích tốt trong báo cáo.
-- **Cách chuẩn mực hơn:** Sửa `train_faster_rcnn.ipynb` dùng `random.seed(42)` và cắt 80/20 y hệt 2 mô hình kia, rồi train lại. Tốn thêm thời gian GPU nhưng bảng so sánh sẽ đặt cả 3 lên cùng một vạch xuất phát.
+- **Biểu đồ Loss** (`train_loss` và `val_loss` chung một trục): dùng để chứng minh mô hình **không bị overfitting**. Dấu hiệu overfitting là `val_loss` quay đầu đi lên trong khi `train_loss` vẫn tiếp tục giảm — nếu Early Stopping làm đúng việc thì điểm dừng phải rơi ngay quanh chỗ đường `val_loss` chạm đáy.
+- **Biểu đồ mAP** (`mAP_50` và `mAP_50_95`): dùng để xác định **điểm hội tụ thật sự**, và để đối chiếu xem `best.pt` được chọn có đúng là đỉnh của đường cong không.
+- **Biểu đồ chồng 3 mô hình**: vẽ `mAP_50_95` của cả ba lên cùng một trục để so sánh trực quan tốc độ hội tụ giữa CNN và Transformer. Đây là hình minh họa mạnh nhất cho luận điểm ở mục 0.3.
+
+Hàm `ve_learning_curve()` đã được viết sẵn trong cả 3 notebook V3, tự động lưu ảnh PNG cạnh file trọng số.
 
 ---
 
@@ -53,22 +82,27 @@ Vì dataset ảnh đã có sẵn công khai trên Kaggle, ta **chỉ cần uploa
 
 ### Bước 1.1: Gom 3 file weights về một thư mục trên máy Local
 
-Sau khi train xong, các file trọng số nằm rải rác ở những đường dẫn sau (trích trực tiếp từ mã nguồn 3 notebook huấn luyện):
+Sau khi train xong bằng các notebook trong `notebooks/v3/`, file trọng số nằm ở những đường dẫn sau (trích trực tiếp từ mã nguồn):
 
-| Mô hình | Đường dẫn file gốc sau khi train | Dung lượng ước tính |
-|---|---|---|
-| YOLOv8s-P2 | `zalo_traffic/yolov8s_p2_highres/weights/best.pt` | ~20-25 MB |
-| Faster R-CNN | `faster_rcnn_highres/faster_rcnn_best.pth` | ~160-170 MB |
-| RT-DETR-L | `zalo_traffic/rtdetr_kaggle_640/weights/best.pt` (bản Kaggle)<br>hoặc `zalo_traffic/rtdetr_colab_highres/weights/best.pt` (bản Colab) | ~63-66 MB |
+| Mô hình | Đường dẫn sau khi train (bản V3) | Nền tảng | Dung lượng ước tính |
+|---|---|---|---|
+| YOLOv8s-P2 | `/kaggle/working/zalo_traffic/yolov8s_p2_v3/weights/best.pt` | Kaggle | ~20-25 MB |
+| Faster R-CNN | `/kaggle/working/faster_rcnn_v3/faster_rcnn_best.pth` | Kaggle | ~160-170 MB |
+| RT-DETR-L | `<Drive>/DoAn_NhanDienBienBao/zalo_traffic/rtdetr_v3/weights/best.pt` | Colab | ~63-66 MB |
 
-Tạo một thư mục sạch trên máy và copy 3 file vào, **đặt tên phẳng và rõ ràng** để tránh nhầm lẫn:
+Tạo một thư mục sạch trên máy và copy 3 file vào, **đặt tên phẳng và rõ ràng** để tránh nhầm lẫn. Nên gom luôn 3 file nhật ký JSON vào cùng chỗ để tiện vẽ Learning Curve về sau:
 
 ```text
 D:\zalo_traffic_3_models\
 ├── 1_YOLOv8_P2_HighRes.pt
 ├── 2_FasterRCNN_ResNet50.pth
-└── 3_RTDETR_Large_Transformer.pt
+├── 3_RTDETR_Large_Transformer.pt
+├── yolov8_training_history.json
+├── faster_rcnn_training_history.json
+└── rtdetr_training_history.json
 ```
+
+> **Lưu ý về định dạng checkpoint của Faster R-CNN:** từ bản V3, file `.pth` lưu dưới dạng dictionary gồm `model_state_dict`, `anchor_sizes`, `aspect_ratios`, `num_classes` chứ không phải `state_dict` trần như bản cũ. Lý do là bộ Anchor K-Means giờ chỉ tính trên tập Train, nên phải lưu kèm mới nạp lại đúng được. Notebook đánh giá đã xử lý được cả hai định dạng.
 
 > **Vì sao để phẳng mà không tạo thư mục con?** Lệnh `kaggle datasets create` mặc định **bỏ qua các thư mục con** (`--dir-mode skip`). Nếu bạn tạo 3 thư mục con thì upload xong sẽ thấy dataset rỗng. Để file phẳng là cách an toàn nhất. (Nếu bạn thích cấu trúc thư mục thì phải upload bằng giao diện Web ở Cách B bên dưới).
 
@@ -139,25 +173,49 @@ Notebook đánh giá đã được viết để **tự động dò tìm** (`glob
 Vì bộ dữ liệu gốc đã có sẵn công khai tại [phhasian0710/za-traffic-2020](https://www.kaggle.com/datasets/phhasian0710/za-traffic-2020), ta **không phải upload gì thêm**. Chỉ cần gắn dataset đó vào notebook rồi tái lập lại đúng phép chia đã dùng lúc train.
 
 ### Nguyên tắc: Tái lập bằng Seed thay vì upload file
-Cả `train_yolov8.ipynb` và `train_rtdetr.ipynb` đều chia dữ liệu bằng đúng đoạn code sau:
 
-```python
-image_ids = list(images_info.keys())
-random.seed(42)
-random.shuffle(image_ids)
-split_idx = int(len(image_ids) * 0.8)
-train_ids = image_ids[:split_idx]
-val_ids   = image_ids[split_idx:]   # <-- 20% này chính là tập Hold-out Test của ta
+Notebook đánh giá chỉ cần chạy lại đúng script mà 3 notebook huấn luyện đã dùng:
+
+```bash
+python split_dataset.py --output-root /kaggle/working/data_v3
 ```
 
-Vì `random.seed(42)` là cố định, chạy lại đoạn code này **ở bất kỳ đâu cũng cho ra đúng danh sách ảnh giống hệt**. Đây chính là lý do ta không cần đóng gói và upload tập test — bản thân con số seed đã là "bản hợp đồng" đảm bảo tính tái lập.
+Script này chia dữ liệu bằng `random.seed(42)` cố định, nên chạy ở bất kỳ đâu, bất kỳ lúc nào cũng cho ra **đúng danh sách ảnh giống hệt**. Con số seed chính là "bản hợp đồng" đảm bảo tính tái lập — không cần đóng gói và upload tập test.
 
-**Ưu điểm:** Không tốn dung lượng, không sợ upload nhầm phiên bản, và người chấm có thể tự kiểm chứng lại bằng cách chạy đúng đoạn code trên.
+Kết quả sinh ra hai nhánh tách rời:
 
-**Điều kiện bắt buộc:** Danh sách `images_info.keys()` phải giữ nguyên thứ tự như lúc train. Điều này luôn đúng vì cả hai đều đọc từ cùng một file `train_traffic_sign_dataset.json` bất biến, và `dict` trong Python 3.7+ giữ nguyên thứ tự chèn.
+```text
+/kaggle/working/data_v3/
+├── dataset_train_val/     <- 3 model đã dùng nhánh này để train
+│   └── data.yaml          (chỉ có train + val, KHÔNG có khóa test)
+├── holdout_test/          <- notebook đánh giá CHỈ đọc nhánh này
+│   ├── images/, labels/
+│   └── holdout_test_annotations.json
+└── split_manifest.json    <- biên bản đối chiếu
+```
 
-### (Tùy chọn) Khi nào mới nên đóng băng tập test thành Dataset riêng?
-Chỉ nên làm khi bạn **train lại cả 3 model** theo Cách chuẩn mực ở mục 0.2. Lúc đó hãy tách 15% ảnh ra thành một dataset riêng, không cho bất kỳ mô hình nào nhìn thấy, rồi upload y hệt quy trình ở Phần 1. Với hiện trạng đồ án (model đã train xong), việc này không còn ý nghĩa vì dữ liệu đã bị "nhìn" mất rồi.
+**Ưu điểm:** Không tốn dung lượng, không sợ upload nhầm phiên bản, và người chấm có thể tự kiểm chứng bằng cách chạy lại đúng script đó rồi đối chiếu `split_manifest.json`.
+
+**Điều kiện bắt buộc:** Thứ tự `images` trong file JSON gốc phải giữ nguyên. Điều này luôn đúng vì mọi thứ đều đọc từ cùng một file `train_traffic_sign_dataset.json` bất biến trên Kaggle, và `dict` trong Python 3.7+ giữ nguyên thứ tự chèn.
+
+### Kiểm tra chéo: tập Hold-out có thật sự sạch không?
+
+Trước khi chạy đánh giá, nên xác minh nhanh bằng `split_manifest.json`:
+
+```python
+import json
+
+bien_ban = json.load(open('/kaggle/working/data_v3/split_manifest.json', encoding='utf-8'))
+tap_train = set(bien_ban['image_ids']['train'])
+tap_val = set(bien_ban['image_ids']['val'])
+tap_test = set(bien_ban['image_ids']['holdout_test'])
+
+print('Train ∩ Test:', len(tap_train & tap_test))   # phải bằng 0
+print('Val   ∩ Test:', len(tap_val & tap_test))     # phải bằng 0
+print('Seed đã dùng:', bien_ban['random_seed'])     # phải bằng 42
+```
+
+Bản thân `split_dataset.py` cũng đã có sẵn ba lệnh `assert` kiểm tra điều này và sẽ dừng ngay nếu phát hiện trùng lặp.
 
 ---
 
@@ -204,4 +262,6 @@ Có 2 cách đưa `evaluate_3_models.ipynb` lên Kaggle:
 - [ ] Accelerator đã bật **GPU P100** (không phải None, không phải CPU).
 - [ ] **Internet = On**.
 - [ ] Cả 3 file weights đều hiện diện trong `/kaggle/input/`, không file nào bị lỗi upload 0 KB.
-- [ ] Đã đọc và hiểu cảnh báo ở mục **0.2** để ghi chú thích trung thực dưới bảng kết quả trong báo cáo.
+- [ ] Cả 3 weights đều là **bản V3** (train bằng notebook trong `notebooks/v3/`). Nếu trộn lẫn weights V2 cũ vào thì bảng so sánh mất giá trị, vì model V2 đã học trên tập dữ liệu khác.
+- [ ] Đã chạy `split_dataset.py` và kiểm tra `split_manifest.json` cho thấy 3 tập không giao nhau.
+- [ ] Đã tải về đủ 3 file `*_training_history.json` để vẽ Learning Curve cho báo cáo.

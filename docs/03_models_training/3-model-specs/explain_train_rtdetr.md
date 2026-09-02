@@ -4,6 +4,8 @@ Tài liệu này giải thích một cách cặn kẽ và chuyên sâu từng đ
 
 Khác với YOLOv8 hay Faster R-CNN, RT-DETR là một kiến trúc dựa trên **Transformer**, mang trong mình sức mạnh của cơ chế **Self-Attention** nhưng lại đòi hỏi cực kỳ khắt khe về bộ nhớ VRAM. Notebook này được sinh ra để chạy trên **Google Colab** nhằm tận dụng tối đa tài nguyên phần cứng, đồng thời tích hợp các thủ thuật "chống tràn bộ nhớ" đỉnh cao.
 
+> **Phạm vi tài liệu:** Đây là bản giải thích cho notebook **V1** (`notebooks/train_rtdetr.ipynb`), vẫn còn nguyên vẹn để đối chiếu lịch sử. Bản chạy chính thức hiện tại là **V3** (`notebooks/v3/train_rtdetr_v3.ipynb`) với 3 khác biệt: chia dữ liệu 70/10/20 bằng script dùng chung, `epochs=100` kèm Early Stopping `patience=15`, và xuất nhật ký `rtdetr_training_history.json`. Riêng `imgsz=640` và `batch=4` giữ nguyên. Xem `models_specs.md` mục 0.
+
 ---
 
 ## Cell 1: Tải dữ liệu siêu tốc bằng Kaggle API

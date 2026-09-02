@@ -4,6 +4,48 @@ Tài liệu này đóng vai trò như một **Datasheet tiêu chuẩn công nghi
 
 ---
 
+## 0. Giao thức Dữ liệu & Huấn luyện dùng chung (Phiên bản V3)
+
+Ba mô hình chỉ so sánh được với nhau nếu chúng được huấn luyện và chấm điểm trong **cùng một điều kiện**. Mục này chốt các quy ước bắt buộc mà cả 3 phải tuân theo, được hiện thực hóa trong thư mục `Traffic-Sign-Detection-ZaloAI/notebooks/v3/`.
+
+### 0.1 Phép chia dữ liệu 70-10-20 (một nguồn duy nhất)
+
+Danh sách ảnh được xáo trộn bằng `random_seed = 42`, sau đó cắt lần lượt theo thứ tự **Test → Val → Train**:
+
+| Thứ tự cắt | Tập | Tỷ lệ | Vai trò |
+|---|---|---|---|
+| 1 | **Hold-out Test** | **20% đầu** | **Bị giấu hoàn toàn.** Chỉ mở ra đúng một lần ở bước đánh giá cuối cùng |
+| 2 | Validation | 10% tiếp theo | Chọn `best.pt` và kích hoạt Early Stopping |
+| 3 | Train | ~70% còn lại | Dữ liệu duy nhất mà mô hình được nhìn thấy để cập nhật trọng số |
+
+**Vì sao phải cắt tập Test ra trước tiên?** Nếu cắt theo thứ tự Train → Val → Test thì tập Test nằm ở cuối danh sách. Sau này chỉ cần chỉnh tỷ lệ Train một chút (ví dụ đổi từ 70% sang 75%) là toàn bộ tập Test bị xê dịch theo, và mọi kết quả đã chạy trước đó không còn so sánh được với kết quả mới. Cắt Test ra đầu tiên thì nó luôn là 20% đầu của danh sách đã xáo trộn — dù có đổi tỷ lệ Train/Val thế nào, tập Test vẫn đúng y nguyên những bức ảnh cũ.
+
+- Toàn bộ phép chia do một script duy nhất đảm nhiệm: `data_preparation/split_dataset.py`, với `random_seed = 42` cố định. Cả 3 notebook V3 đều gọi chung script này thay vì mỗi notebook tự viết một đoạn chia riêng — chỉ cần lệch một dòng là cả bảng so sánh mất giá trị.
+- **Tập Hold-out không được khai báo trong `data.yaml`.** Nếu thêm khóa `test:` trỏ tới thư mục hold-out, Ultralytics sẽ tự động chạy đánh giá trên đó và làm rò rỉ thông tin vào quá trình chọn mô hình.
+- Script xuất kèm `split_manifest.json` ghi lại danh sách `image_id` của cả 3 tập, đóng vai trò biên bản để đối chiếu về sau.
+- Vì Faster R-CNN đọc COCO JSON chứ không đọc file `.txt` của YOLO, script xuất song song cả hai định dạng (`train_annotations.json`, `val_annotations.json`) từ đúng danh sách ảnh đó.
+
+> **Khác biệt so với phiên bản cũ:** Bản V1/V2 chia 80/20 cho YOLOv8 và RT-DETR (không có tập Test), còn Faster R-CNN chia 90/10 bằng `random_split()` **không set seed** nên không tái lập được. Hệ quả là ba mô hình học trên ba tập dữ liệu khác nhau và không có tập Test thật sự sạch. Bản V3 sinh ra để khắc phục đúng vấn đề này.
+
+### 0.2 Early Stopping: `epochs = 100`, `patience = 15`
+
+Cả 3 mô hình đều đặt trần `epochs = 100` và dừng sớm khi 15 epoch liên tiếp không cải thiện trên tập Validation.
+
+**Lý do không dùng số epoch cố định:** CNN và Transformer hội tụ với tốc độ rất khác nhau. YOLOv8 (mạng tích chập, có sẵn quy nạp cục bộ về không gian) thường bắt nhịp rất nhanh; RT-DETR phải tự học quan hệ không gian từ con số 0 nên chậm hơn hẳn ở giai đoạn đầu. Nếu ép cả ba chạy cứng 50 epoch thì mô hình hội tụ chậm bị cắt ngang lúc chưa chín, còn mô hình hội tụ nhanh thì thừa ra hàng chục epoch chỉ để overfitting. Cho cả ba cùng trần 100 epoch rồi để Early Stopping tự quyết định điểm dừng mới là so sánh công bằng, và bản thân số epoch thực tế mỗi mô hình dùng cũng trở thành một số liệu đáng phân tích.
+
+**Tiêu chí dừng thống nhất là mAP trên tập Validation**, không phải `val_loss`. Ultralytics vốn dừng theo fitness (hàm trọng số của mAP@50 và mAP@50-95), nên Faster R-CNN cũng phải theo mAP@50-95 thì ba mô hình mới cùng một thước đo.
+
+### 0.3 Nhật ký huấn luyện dạng JSON
+
+Sau khi train, mỗi mô hình sinh ra một file `<tên_model>_training_history.json` chứa mảng dữ liệu theo từng epoch với 5 trường: `epoch_id`, `train_loss`, `val_loss`, `mAP_50`, `mAP_50_95`.
+
+- **YOLOv8 và RT-DETR:** Ultralytics đã ghi sẵn `results.csv`, chỉ cần một hàm parse chuyển sang JSON. Hàm này dò cột theo từ khóa `loss` thay vì gõ cứng tên cột, vì hai mô hình dùng bộ loss khác nhau (YOLOv8: `box`/`cls`/`dfl`; RT-DETR: `giou`/`cls`/`l1`).
+- **Faster R-CNN:** không có sẵn cơ chế nào, phải nhúng thẳng một list vào vòng lặp `for epoch in range(...)` rồi `json.dump()` sau **mỗi** epoch (không đợi train xong) để không mất nhật ký khi Kaggle ngắt phiên giữa chừng.
+
+File JSON này là nguyên liệu để vẽ **Learning Curve** trong báo cáo — xem `docs/05_testing_evaluation/test_KeHoach_Kaggle.md`.
+
+---
+
 ## 1. YOLOv8s-P2 (Custom Architecture)
 **Phân loại:** One-stage Anchor-free Detector
 **Mục tiêu thiết kế:** Đạt tốc độ mượt mà nhất cho Web App nhưng vẫn bắt được vật thể cực nhỏ (nhờ P2 Layer).
@@ -22,7 +64,8 @@ Tài liệu này đóng vai trò như một **Datasheet tiêu chuẩn công nghi
 - **Thuật toán Tối ưu (Optimizer):** `AdamW` (Tự động thích ứng Learning Rate và phạt Weight Decay chuẩn xác hơn Adam gốc).
 - **Lịch trình LR (Learning Rate Scheduler):** `Cosine Annealing`. Khởi đầu (Warmup) ở mức rất nhỏ, sau đó vọt lên và giảm dần theo đường cong hình sin lượn sóng.
 - **Kích thước Lô (Batch Size):** 8.
-- **Số vòng lặp (Epochs):** 50.
+- **Số vòng lặp (Epochs):** `100` với **Early Stopping `patience = 15`** (xem mục 0.2). Ultralytics tự theo dõi fitness trên tập Val, dừng khi 15 epoch liên tiếp không cải thiện và giữ lại `best.pt` của epoch tốt nhất.
+- **Tỷ lệ chia dữ liệu:** 70% Train / 10% Val / 20% Hold-out Test ẩn (xem mục 0.1).
 - **Tham số dọn rác (NMS):** Hạ `max_det = 50` (Giới hạn tối đa 50 vật thể/ảnh để tối ưu luồng xử lý Web) và `iou = 0.6` (Bảo vệ các biển báo cắm sát nhau).
 
 ### 1.3 Cơ chế Tiền xử lý & Augmentation (CPU DataLoader)
@@ -67,12 +110,24 @@ Tổng Loss = $\lambda_1 L_{cls} + \lambda_2 L_{box} + \lambda_3 L_{dfl}$
 - **Khối lượng tính toán (GFLOPs):** ~130 GFLOPs.
 
 ### 2.2 Thiết lập Huấn luyện (Training Config)
-- **Tỷ lệ chia dữ liệu:** 90% Train / 10% Validation. Đo lường Validation Loss (bằng mẹo no_grad kết hợp FrozenBatchNorm) để chọn ra Best Model.
-- **Độ phân giải đầu vào:** Tự động scale sao cho cạnh nhỏ nhất là 800px.
+- **Tỷ lệ chia dữ liệu:** 70% Train / 10% Val / 20% Hold-out Test ẩn (xem mục 0.1), dùng chung `split_dataset.py` với hai mô hình kia.
+- **Độ phân giải đầu vào:** Tự động scale sao cho cạnh nhỏ nhất là 800px (`min_size=800`, `max_size=1333` — đây là giá trị mặc định của torchvision, mã nguồn không ghi đè).
 - **Thuật toán Tối ưu (Optimizer):** `SGD` (`lr=0.005`, `momentum=0.9`, `weight_decay=0.0005`). Với ResNet, SGD kèm Momentum luôn mang lại sự hội tụ ổn định và sâu hơn so với các thuật toán họ Adam.
-- **Lịch trình LR (Learning Rate Scheduler):** `StepLR`. Hạ tốc độ học xuống 10 lần ở Epoch thứ 10 để mô hình hạ cánh êm ái, chống dao động và chống học vẹt.
+- **Lịch trình LR (Learning Rate Scheduler):** `CosineAnnealingLR` (`T_max = 100`), giảm mượt theo đường cong sin suốt 100 epoch.
 - **Batch Size:** 4 (Do kiến trúc Two-stage rất tốn VRAM).
-- **Số vòng lặp (Epochs):** 15.
+- **Số vòng lặp (Epochs):** `100` với **Early Stopping `patience = 15`** tự cài bằng tay (PyTorch thuần không có sẵn cơ chế này như Ultralytics).
+- **Tiêu chí chọn Best Model:** `mAP@50-95` trên tập Validation, đo bằng `torchmetrics` sau mỗi epoch.
+- **Augmentation tập Validation:** Không áp dụng. Tập Val chỉ đi qua `A.Normalize()`, không có `RandomSizedBBoxSafeCrop`.
+- **Phạm vi chạy K-Means Anchor:** Chỉ trên bounding box của **tập Train**.
+
+> **Bốn thay đổi so với phiên bản cũ và lý do:**
+>
+> 1. **`StepLR` → `CosineAnnealingLR`.** Bản cũ dùng `StepLR(step_size=10, gamma=0.1)` cho 15 epoch nên không có vấn đề gì. Nhưng khi nâng trần lên 100 epoch, Learning Rate sẽ bị chia 10 tổng cộng 10 lần, tức là teo từ `0.005` xuống cỡ $5 \times 10^{-13}$ — mô hình ngừng học hẳn từ khoảng epoch 30 và Early Stopping sẽ cắt ngang một cách vô nghĩa. Đổi sang Cosine cũng đồng bộ luôn với `cos_lr=True` của hai mô hình kia.
+> 2. **Chọn Best Model theo `val_loss` → theo `mAP@50-95`.** Ultralytics chọn best theo mAP, nên nếu Faster R-CNN chọn theo loss thì ba mô hình đang được tuyển chọn bằng hai tiêu chí khác nhau. Đổi lại cho thống nhất. Bản V3 vẫn ghi `val_loss` vào nhật ký để vẽ Learning Curve.
+> 3. **Tập Validation không còn bị Augment.** Bản cũ truyền chung `get_transform()` cho cả hai `Dataset`, nghĩa là tập Val cũng bị `RandomSizedBBoxSafeCrop` với `p=0.3` — điểm đánh giá vì thế bị nhiễu ngẫu nhiên qua từng epoch. Bản V3 tách `get_transform_train()` và `get_transform_val()` riêng.
+> 4. **K-Means chỉ chạy trên tập Train.** Bản cũ chạy K-Means trên toàn bộ annotation của dataset, kể cả phần sau này trở thành tập Test. Kích thước Anchor là một tham số học được từ dữ liệu, nên làm vậy là để thông tin về tập Test rò rỉ vào thiết kế mạng — Data Leakage thật sự, dù mức độ nhẹ.
+>
+> Vì bộ Anchor giờ phụ thuộc vào tập Train, checkpoint V3 lưu dạng dictionary kèm luôn `anchor_sizes` bên trong thay vì chỉ lưu `state_dict`. Lúc nạp lại để test không phải chạy lại K-Means để đoán anchor nữa.
 
 ### 2.3 Cơ chế Hàm độ lỗi (Loss Functions)
 - **RPN Loss:** Gồm 2 hàm: Objectness Loss (BCE) để phân biệt có vật thể hay nền, và RPN Box Loss (Smooth L1).
@@ -116,7 +171,8 @@ Dây chuyền Two-stage của Faster R-CNN trải qua 5 bước cực kỳ cồn
 - **Kích thước Lô (Batch Size):** `8` trên Kaggle (`train_rtdetr_Kaggle.ipynb`, chạy song song 2 GPU T4 qua `device=[0, 1]`) và `4` trên Colab (`train_rtdetr.ipynb`, 1 GPU).
 - **Thủ thuật Chống OOM (Out-Of-Memory):** Sau khi hạ về `640`, bộ nhớ Attention giảm 16 lần nên **không còn phải dùng Gradient Accumulation** nữa. Kế hoạch ban đầu (`batch=2` + `accumulate=4` để tạo batch ảo bằng 8) chỉ là giải pháp chữa cháy cho mức `1280`; nay ta nạp thẳng `batch=8` thật, vừa đơn giản hơn vừa cho đạo hàm ổn định hơn batch ảo.
 - **Thuật toán Tối ưu (Optimizer):** `AdamW` + `Cosine Annealing` (`cos_lr=True`).
-- **Số vòng lặp (Epochs):** 50.
+- **Số vòng lặp (Epochs):** `100` với **Early Stopping `patience = 15`** (xem mục 0.2). Đây là mô hình hưởng lợi nhiều nhất từ cơ chế này: Transformer nổi tiếng hội tụ chậm hơn CNN ở giai đoạn đầu vì phải tự học quan hệ không gian từ con số 0, nên nếu bị cắt cứng ở 50 epoch rất dễ bị đánh giá thấp oan.
+- **Tỷ lệ chia dữ liệu:** 70% Train / 10% Val / 20% Hold-out Test ẩn (xem mục 0.1).
 
 ### 3.3 Cơ chế Hàm độ lỗi (Loss Functions)
 - Bỏ hẳn tư duy Anchor Box (Khung mồi).

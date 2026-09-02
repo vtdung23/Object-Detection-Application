@@ -2,6 +2,16 @@
 
 Tài liệu này là bản thiết kế code (Code Blueprint) tổng quát và chi tiết nhất để áp dụng chính xác **10 chiến thuật đã chốt từ Phần IV của file EDA Tổng kết** vào quá trình huấn luyện 3 mô hình và xây dựng ứng dụng Web App Inference.
 
+> ### 📌 Cập nhật phiên bản V3 — đọc trước khi làm theo tài liệu này
+>
+> Các đoạn code minh họa bên dưới mô tả **bản V1/V2** (notebook nằm trực tiếp trong `notebooks/`). Bản triển khai chính thức hiện tại là **V3**, nằm ở `notebooks/v3/`, với ba khác biệt bắt buộc:
+>
+> 1. **Chia dữ liệu 70/10/20** bằng script dùng chung `data_preparation/split_dataset.py` (seed 42), trong đó 20% Hold-out Test bị giấu hoàn toàn khỏi `data.yaml`.
+> 2. **`epochs = 100` + Early Stopping `patience = 15`** cho cả 3 mô hình, thay cho số epoch cố định 50/15.
+> 3. **Nhật ký JSON theo từng epoch** (`<tên_model>_training_history.json`) để vẽ Learning Curve.
+>
+> Đặc tả đầy đủ ở `models_specs.md` **mục 0**. Quy trình train song song trên Colab và Kaggle ở `deployment_guide.md`.
+
 ---
 
 ## TỔNG QUAN PHÂN BỔ KỸ THUẬT

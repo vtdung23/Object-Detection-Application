@@ -145,11 +145,12 @@ Traffic-Sign-Detection-ZaloAI/
 - **File thực hiện:** `notebooks/train_yolov8.ipynb`
 - **Phong cách Code:** Tuân thủ chặt chẽ `AGENTS.md` (Viết code mộc mạc kiểu sinh viên, comment tiếng Việt cho các khối logic).
 - **Quy trình chi tiết trong file Notebook (Chạy trên Kaggle):**
-  1. **Khối 1 (Tiền xử lý):** Sử dụng hàm `json.load()` đọc file `train_traffic_sign_dataset.json`. Tạo thư mục format YOLO. (Tách ngẫu nhiên 80% train, 20% val).
+  1. **Khối 1 (Tiền xử lý):** Gọi script dùng chung `data_preparation/split_dataset.py` để chia **70% train / 10% val / 20% Hold-out Test** với `random_seed=42`. Tập Hold-out được ghi ra thư mục riêng và **không** khai báo trong `data.yaml`.
   2. **Khối 2 (Cấu hình Nâng cao - M2.3 & M1.1):** 
      - Sửa file cấu hình `yolov8.yaml` để **kích hoạt P2 Layer** (tăng khả năng bắt vật thể siêu nhỏ). 
      - Code tự động tạo file `dataset.yaml` chứa đường dẫn data.
-  3. **Khối 3 (Huấn luyện):** Cài đặt thư viện `ultralytics`. Dùng lệnh `model.train()` với cấu hình: `epochs=50`, `imgsz=1280` (trị vật thể nhỏ), `batch=8`. (Lưu ý gài các tham số phạt class thiểu số để kích hoạt **Focal Loss** xử lý mất cân bằng dữ liệu).
+  3. **Khối 3 (Huấn luyện):** Cài đặt thư viện `ultralytics`. Dùng lệnh `model.train()` với cấu hình: `epochs=100`, `patience=15` (Early Stopping), `imgsz=1280` (trị vật thể nhỏ), `batch=8`. (Lưu ý gài các tham số phạt class thiểu số để kích hoạt **Focal Loss** xử lý mất cân bằng dữ liệu).
+  5. **Khối 5 (Nhật ký):** Parse file `results.csv` của Ultralytics thành `yolov8_training_history.json` để vẽ Learning Curve.
   4. **Khối 4 (Suy luận - M2.1):** Cài đặt thư viện **SAHI** để tiến hành cắt ảnh trượt đè lấp (Overlapping Sliding Window) lúc dự đoán (Inference), tối đa hóa mAP.
 - **Lưu ý triển khai:** Khối 1 và Khối 2 xử lý việc tạo folder và json ngay trên Kaggle RAM, tránh việc phải upload hàng vạn file txt từ máy cá nhân lên gây lỗi mạng.
 
@@ -161,13 +162,15 @@ Traffic-Sign-Detection-ZaloAI/
   1. **Khối 1 (Tải dữ liệu):** Sử dụng Kaggle API để tải trực tiếp dataset Zalo AI về môi trường Cloud.
   2. **Khối 2 (Tạo lớp Dataset):** Code class `ZaloTrafficDataset`. Hàm `__getitem__` sẽ đọc thẳng tọa độ từ file COCO JSON gốc, xử lý bounding box thành cấu trúc tensor dictionary `{boxes, labels}`.
   3. **Khối 3 (Khởi tạo Mô hình & M3.1 Anchor K-Means):** Import `fasterrcnn_resnet50_fpn`. **QUAN TRỌNG:** Phải gọi hàm `AnchorGenerator` của Torchvision, nạp 5 kích thước hộp vuông (đã tính bằng K-Means ở bước EDA) để thay thế bộ Anchor hình chữ nhật mặc định của COCO. Sau đó mới thay lớp phân loại mặc định thành 8 classes (7 biển báo + 1 nền).
-  4. **Khối 4 (Huấn luyện):** Thiết lập `SGD Optimizer`. Viết vòng lặp `for epoch in range(epochs):` thủ công, nạp batch vào GPU, tính toán Loss, gọi `backward()` và cập nhật trọng số. Lưu trọng số `faster_rcnn_best.pth` nếu Loss giảm.
+  4. **Khối 4 (Huấn luyện):** Thiết lập `SGD Optimizer` kèm `CosineAnnealingLR`. Viết vòng lặp `for epoch in range(100):` thủ công, nạp batch vào GPU, tính toán Loss, gọi `backward()` và cập nhật trọng số. Sau mỗi epoch đo `val_loss` và `mAP` bằng `torchmetrics`, lưu `faster_rcnn_best.pth` nếu mAP@50-95 lập kỷ lục mới, và tự đếm Early Stopping với `patience=15`.
+  5. **Khối 5 (Nhật ký):** Ghi `faster_rcnn_training_history.json` sau **mỗi** epoch (không đợi train xong) để không mất dữ liệu khi Kaggle ngắt phiên.
 
 ### 3. Specification Mô hình 3 - DETR (RT-DETR)
 - **File thực hiện:** `notebooks/train_rtdetr.ipynb`
 - **Môi trường chạy:** Kaggle Notebook (có thể chạy sau khi YOLO train xong).
 - **Kiến trúc:** Nhóm quyết định sử dụng **RT-DETR** (Real-Time DETR) thay cho DETR truyền thống. Sự thay đổi này mang tính chiến lược vì RT-DETR khắc phục điểm yếu chí mạng của Transformer là "tốc độ chậm", giúp mô hình có thể đạt Real-time như YOLO nhưng mang trong mình sự chính xác của Transformer.
 - **Quy trình chi tiết trong file Notebook:**
-  1. **Khối 1 (Chuẩn bị):** Tái sử dụng lại toàn bộ cấu trúc folder YOLO (images, labels) đã được tạo ra từ file `train_yolov8.ipynb`. (Bởi vì RT-DETR của Ultralytics hỗ trợ đọc chung format với YOLO).
-  2. **Khối 2 (Huấn luyện):** Load mô hình `rtdetr-l.pt` (bản Large). Gọi hàm `model.train()` với `imgsz=640` và `epochs=50`. (Lưu ý: RT-DETR **không** dùng chung `imgsz=1280` với YOLOv8. Ma trận Self-Attention tăng theo $O(N^2)$ nên ảnh 1280 gây tràn VRAM và kéo dài thời gian train tới ~15 tiếng/lượt, vượt hạn mức GPU của Kaggle).
+  1. **Khối 1 (Chuẩn bị):** Gọi cùng script `split_dataset.py` như YOLOv8. Vì seed cố định là 42 nên dù chạy bên Colab hay Kaggle, phép chia vẫn ra kết quả y hệt — hai mô hình chắc chắn học trên đúng một tập dữ liệu. (RT-DETR của Ultralytics đọc chung format với YOLO).
+  2. **Khối 2 (Huấn luyện):** Load mô hình `rtdetr-l.pt` (bản Large). Gọi hàm `model.train()` với `imgsz=640`, `epochs=100` và `patience=15`. (Lưu ý: RT-DETR **không** dùng chung `imgsz=1280` với YOLOv8. Ma trận Self-Attention tăng theo $O(N^2)$ nên ảnh 1280 gây tràn VRAM và kéo dài thời gian train tới ~15 tiếng/lượt, vượt hạn mức GPU của Kaggle).
+  3. **Khối 3 (Nhật ký):** Parse `results.csv` thành `rtdetr_training_history.json`, dùng chung hàm parse với YOLOv8.
 - **Lưu ý:** Việc sử dụng chung thư viện `ultralytics` cho 2 mô hình (YOLO và RT-DETR) là một điểm sáng, giúp đơn giản hóa pipeline tiền xử lý, tránh viết code rườm rà dễ sinh lỗi.

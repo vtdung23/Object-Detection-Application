@@ -2,6 +2,8 @@
 
 Tài liệu này giải thích chi tiết từng dòng code trong file `train_faster_rcnn.ipynb`, tập trung vào việc đối chiếu và làm rõ cách các dòng code này hiện thực hóa các thông số kỹ thuật đã được định nghĩa tại `models_specs.md` (Đặc biệt là phần **2. Faster R-CNN (Baseline Two-stage)**) và `train_GiaiThich_Hyperparams.md` (phần **3. Mô hình Faster R-CNN**).
 
+> **Phạm vi tài liệu:** Đây là bản giải thích cho notebook **V1** (`notebooks/train_faster_rcnn.ipynb`), vẫn còn nguyên vẹn để đối chiếu lịch sử. Bản chạy chính thức hiện tại là **V3** (`notebooks/v3/train_faster_rcnn_v3.ipynb`). Đây là mô hình thay đổi nhiều nhất giữa hai phiên bản: chia dữ liệu 70/10/20 seed 42 (thay cho `random_split` 90/10 không seed), `epochs=100` + Early Stopping thủ công `patience=15`, đổi `StepLR` sang `CosineAnnealingLR`, chọn Best Model theo `mAP@50-95` thay vì `val_loss`, bỏ Augmentation trên tập Val, và chỉ chạy K-Means Anchor trên tập Train. Lý do từng thay đổi ghi ở `models_specs.md` mục 2.2.
+
 ## Cell 1: Markdown - Tiêu đề Notebook
 
 ```markdown

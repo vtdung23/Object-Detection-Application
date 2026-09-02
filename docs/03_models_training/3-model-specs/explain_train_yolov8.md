@@ -2,6 +2,8 @@
 
 Tài liệu này giải thích chi tiết từng dòng code trong file `train_yolov8.ipynb`, tập trung vào việc đối chiếu và làm rõ cách các dòng code này hiện thực hóa các thông số kỹ thuật đã được định nghĩa tại `models_specs.md` (Đặc biệt là phần **1. YOLOv8s-P2 (Custom Architecture)**).
 
+> **Phạm vi tài liệu:** Đây là bản giải thích cho notebook **V1** (`notebooks/train_yolov8.ipynb`), vẫn còn nguyên vẹn để đối chiếu lịch sử. Bản chạy chính thức hiện tại là **V3** (`notebooks/v3/train_yolov8_v3.ipynb`) với 3 khác biệt: chia dữ liệu 70/10/20 bằng script dùng chung, `epochs=100` kèm Early Stopping `patience=15`, và xuất nhật ký `yolov8_training_history.json`. Xem `models_specs.md` mục 0.
+
 ## Cell 1: Khai báo thư viện và Chuẩn bị dữ liệu
 
 ```python
