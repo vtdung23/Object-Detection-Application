@@ -115,11 +115,11 @@ Mở PowerShell tại thư mục vừa tạo:
 pip install kaggle
 
 # Đăng nhập qua trình duyệt, CLI tự lưu thông tin xác thực
-kaggle auth login
+python -m kaggle auth login
 
 # Sinh ra file mô tả dataset
 cd "D:\zalo_traffic_3_models"
-kaggle datasets init -p .
+python -m kaggle datasets init -p .
 ```
 
 > **Về việc xác thực:** Kaggle đã bỏ cơ chế tự tải `kaggle.json` khi tạo token. Bây giờ trang `kaggle.com/settings/api` chỉ hiện ra một chuỗi `KGAT_...` (chỉ hiện một lần duy nhất). Nếu `kaggle auth login` không chạy được trên bản `kaggle` đang cài, có hai cách thay thế: đặt biến môi trường `KAGGLE_API_TOKEN` bằng chuỗi đó, hoặc kéo xuống mục **Legacy API Credentials** trên cùng trang, bấm **Create Legacy API Key** để tải file `kaggle.json` như kiểu cũ rồi chép vào `%USERPROFILE%\.kaggle\`.
@@ -128,22 +128,22 @@ Lệnh trên tạo file `dataset-metadata.json`. Mở nó ra và sửa lại (th
 
 ```json
 {
-  "title": "Zalo Traffic Sign - 3 Trained Models",
-  "id": "your-username/zalo-traffic-3-models",
-  "licenses": [{ "name": "CC0-1.0" }]
+  "title": "Zalo Traffic Sign - Weights 3 Models V3",
+  "id": "vtdungfitus/zalo-traffic-3-models-v3",
+  "licenses": [{"name": "CC0-1.0"}]
 }
 ```
 
 Đẩy lên Kaggle:
 
 ```powershell
-kaggle datasets create -p . -m "Weights 3 model: YOLOv8-P2, Faster R-CNN, RT-DETR"
+python -m kaggle datasets create -p . -t
 ```
 
 Sau này nếu train lại và muốn cập nhật weights mới, **không tạo dataset mới** mà tạo phiên bản mới:
 
 ```powershell
-kaggle datasets version -p . -m "Cap nhat weights sau khi train lai 50 epochs"
+python -m kaggle datasets version -p . -m "Cap nhat trong so RT-DETR"
 ```
 
 ### Bước 1.2 — Cách B: Upload bằng giao diện Web (nếu ngại cài CLI)
